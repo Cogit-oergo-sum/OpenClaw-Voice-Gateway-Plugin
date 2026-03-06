@@ -1,0 +1,138 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "zego": {
+            "type": "object",
+            "properties": {
+                "appId": {
+                    "type": "integer",
+                    "description": "ZEGO AppID"
+                },
+                "appSign": {
+                    "type": "string",
+                    "description": "ZEGO AppSign (可选)"
+                },
+                "serverSecret": {
+                    "type": "string",
+                    "description": "ZEGO ServerSecret，用于生成 Token 和签名"
+                },
+                "aiAgentBaseUrl": {
+                    "type": "string",
+                    "description": "ZEGO AI Agent API 的 Base URL",
+                    "default": "https://aigc-aiagent-api.zegotech.cn"
+                }
+            },
+            "required": [
+                "appId",
+                "serverSecret"
+            ]
+        },
+        "llm": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "default": "volcengine"
+                },
+                "apiKey": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string",
+                    "default": "doubao-1-8-flash"
+                },
+                "baseUrl": {
+                    "type": "string",
+                    "default": "https://ark.cn-beijing.volces.com/api/v3"
+                }
+            },
+            "required": [
+                "apiKey"
+            ]
+        },
+        "tts": {
+            "type": "object",
+            "properties": {
+                "vendor": {
+                    "type": "string",
+                    "default": "ByteDance"
+                },
+                "appId": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "voiceType": {
+                    "type": "string",
+                    "default": "zh_female_wanwanxiaohe_moon_bigtts"
+                }
+            },
+            "required": [
+                "appId",
+                "token"
+            ]
+        },
+        "asr": {
+            "type": "object",
+            "properties": {
+                "vendor": {
+                    "type": "string",
+                    "default": "Tencent"
+                },
+                "params": {
+                    "type": "object"
+                },
+                "vadSilenceSegmentation": {
+                    "type": "integer",
+                    "default": 500
+                }
+            }
+        },
+        "advanced": {
+            "type": "object",
+            "properties": {
+                "httpAuthToken": {
+                    "type": "string",
+                    "default": "auto"
+                },
+                "maxResponseTimeMs": {
+                    "type": "integer",
+                    "default": 900
+                },
+                "memoryMaxTokens": {
+                    "type": "integer",
+                    "default": 500
+                },
+                "soulMaxTokens": {
+                    "type": "integer",
+                    "default": 500
+                },
+                "contextMaxRounds": {
+                    "type": "integer",
+                    "default": 10
+                },
+                "messageWindowSize": {
+                    "type": "integer",
+                    "default": 20
+                },
+                "allowSkillOverride": {
+                    "type": "boolean",
+                    "description": "是否允许每次启动时覆盖 workspace/skills/voice-gateway.md",
+                    "default": true
+                },
+                "fallbackMessage": {
+                    "type": "string",
+                    "description": "遇到网关挂掉时的默认兜底语音安抚话术",
+                    "default": "系统反馈：委托主控助理失败。请向用户致歉，说明核心处理中心当前不在线，该请求已登记但需要稍后响应。"
+                }
+            }
+        }
+    },
+    "required": [
+        "zego",
+        "llm",
+        "tts"
+    ]
+}

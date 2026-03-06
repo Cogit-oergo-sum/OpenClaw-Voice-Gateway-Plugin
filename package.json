@@ -1,0 +1,26 @@
+{
+  "name": "voice-gateway",
+  "version": "1.0.0",
+  "description": "OpenClaw 语音通话网关插件",
+  "main": "dist/index.js",
+  "openclaw": {
+    "extensions": {
+      "voice-gateway": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.35",
+    "@types/proper-lockfile": "^4.1.4",
+    "openai": "^6.25.0",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.20",
+    "typescript": "^5.3.3"
+  }
+}
