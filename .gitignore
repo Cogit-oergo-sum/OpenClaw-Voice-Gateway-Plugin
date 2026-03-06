@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+call_states.json
+voice_plugin_aliases.json
+.env
