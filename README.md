@@ -76,28 +76,31 @@ const webhookUrl = 'http://localhost:18789/hooks/agent';
 *（修改后记得重新跑一次 `npm run build`）*
 
 ### 排雷点 2 (前端测试页的网关指针)：
-用于纯本地调测的客户端也固定了网关坐标。打开 `web/app.js` 头部的常量：
-```javascript
-// 修改为你的插件对外的真实 IP 和端口
+用于本地调测的 Web 客户端固定了网关坐标。如果你的网关不是运行在 `18789`，请打开 `web/src/hooks/useAgent.ts` 修改：
+```typescript
 const GATEWAY_URL = 'http://localhost:18789'; 
 ```
 
 ---
 
-## 🎮 四、一键沙盒跑测！(跨设备权限避坑)
+## 🎮 四、一键沙盒跑测！(React + Vite 版)
 
-在无需开发 iOS/Android App 的情况下，你可以通过静态文件浏览器来验收成果：
+本插件配套了一套极具视觉冲击力的 React Web 客户端，支持流式字幕展示和状态联动。
+
+### 1. 启动 Web 终端
 ```bash
 cd web
-python3 -m http.server 8080
+npm install
+npm run dev
 ```
-接着在浏览器打开：`http://localhost:8080/index.html`。
+接着在浏览器打开控制台打印的地址（通常是 `http://localhost:5173`）。
+
+### 2. 交互逻辑
+*   **点击屏幕**：发起语音通话（换取 Token 并建立 RTC 连接）。
+*   **流式信令驱动**：页面视觉球（FluidVoiceCore）的状态完全由 ZEGO AI Agent 的底层信令驱动（ Cmd 3/4 触发）。
+*   **模拟能力**：Webhook 组件（发邮件等场景）由前端 Mock 序列自动触发演示。
 
 ### ⚠️ 致命警告：局域网/手机跨设备测试的 HTTPS 限制！
-**如果新同事试图用手机扫码、或在公司局域网用另外一台电脑通过 IP（例如 `http://192.168.1.56:8080`）来访问这个测试页，麦克风将绝对无法唤醒，并直接抛错！**
+**如果试图用手机扫码、或在公司局域网用另外一台电脑通过 IP 来访问这个测试页，麦克风将绝对无法唤醒！**
 
-这是由于现代浏览器安全策略（Security Policy）导致的：`navigator.mediaDevices.getUserMedia` **只能**在以下两种环境下工作：
-1. **本机纯本地调用**：`http://localhost` 或 `http://127.0.0.1`
-2. **安全证书覆盖的公网环境**：`https://...`
-
-**解决方案**：如果必须要用手机局域网测试体验，请配置一个简单的内网穿透（如 `ngrok http 8080`），通过它生成的全站 https 域名来访问 `index.html`，否则测试页面会在创建流时被浏览器无情阻拦。
+这是由于现代浏览器安全策略导致的：`navigator.mediaDevices.getUserMedia` **只能**在 `localhost` 或已部署 `HTTPS` 证书的环境下工作。如果必须要用手机局域网测试体验，请配置内网穿透（如 `ngrok http 5173`）。

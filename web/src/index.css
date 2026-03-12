@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Fira+Code:wght@400;500;700&display=swap');
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #030712;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-content: center;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.font-mono {
+  font-family: 'Fira Code', monospace;
+}
+
+/* Glassmorphism Widget */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Fluid Voice Core */
+.voice-core-container {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.5s ease;
+}
+
+.state-idle { color: #1e3a8a; }
+.state-listening { color: #06b6d4; }
+.state-speaking { color: #3b82f6; }
+.state-warning { color: #f97316; }
+
+.ring-outer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0.3;
+  animation: energy-ring 3s infinite alternate;
+  transition: all 0.1s;
+}
+
+.ring-inner {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.15;
+  filter: blur(10px);
+  animation: ping-slow 2s infinite;
+  transition: all 0.1s;
+}
+
+.core-orb {
+  position: absolute;
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 20px rgba(255,255,255,0.5);
+  animation: energy-core 1s infinite alternate;
+  transition: all 0.05s ease-out;
+}
+
+/* Glow Progress */
+.glow-progress {
+  box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+}
+
+/* Typing Cursor */
+.typing-cursor::after {
+  content: '█';
+  animation: blink 1s step-end infinite;
+  color: #10b981;
+  margin-left: 2px;
+}
+
+.inline-cursor::after {
+  content: '▍';
+  animation: blink 0.8s step-end infinite;
+  color: currentColor;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(255,255,255,0.3);
+}
+
+.subtitle-mask {
+  mask-image: linear-gradient(to top, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 50%, transparent 100%);
+}

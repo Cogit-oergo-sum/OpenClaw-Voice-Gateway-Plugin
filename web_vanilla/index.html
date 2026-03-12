@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Voice Plugin - 测试面板</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 2rem; background: #f5f5f7; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1 { margin-top: 0; font-size: 1.5rem; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }
+        .controls { display: flex; gap: 1rem; margin: 1.5rem 0; }
+        button { padding: 0.8rem 1.5rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #btn-start { background: #007aff; color: white; }
+        #btn-end { background: #ff3b30; color: white; }
+        .status-box { padding: 1rem; border-radius: 8px; font-family: monospace; white-space: pre-wrap; word-break: break-all; margin-top: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; min-height: 100px; }
+        .tag { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+        .tag.idle { background: #e9ecef; color: #495057; }
+        .tag.active { background: #d4edda; color: #155724; }
+    </style>
+    <!-- 从 CDN 引入 ZEGO Express Web SDK -->
+    <script src="https://unpkg.com/zego-express-engine-webrtc@3.5.0/zego-express-engine-webrtc.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Plugin 调试终端 <span id="conn-state" class="tag idle">IDLE</span></h1>
+        
+        <div class="controls">
+            <button id="btn-start">📱 发起通话 (Start Call)</button>
+            <button id="btn-end" disabled>📞 挂断通话 (End Call)</button>
+        </div>
+
+        <div>
+            <strong>实时网关交互日志：</strong>
+            <div id="log-console" class="status-box">--- 等待操作 ---</div>
+            
+            <audio id="remote-audio" autoplay style="display:none;"></audio>
+        </div>
+    </div>
+
+    <script src="./app.js"></script>
+</body>
+</html>

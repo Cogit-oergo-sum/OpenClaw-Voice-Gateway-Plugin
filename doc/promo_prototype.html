@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OpenClaw Voice Gateway Prototype - V4 Fast Scene</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            idle: '#1d4ed8', listen: '#06b6d4', speak: '#3b82f6', warn: '#f97316'
+                        }
+                    },
+                    animation: {
+                        'blob': 'blob 10s infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'ping-slow': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+                        'energy-ring': 'energy-ring 2s ease-in-out infinite alternate',
+                        'energy-core': 'energy-core 1.5s ease-in-out infinite alternate',
+                    },
+                    keyframes: {
+                        blob: {
+                            '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                            '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                            '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                            '100%': { transform: 'translate(0px, 0px) scale(1)' },
+                        },
+                        'energy-ring': {
+                            '0%': { transform: 'scale(0.9)', opacity: '0.5', filter: 'blur(2px)' },
+                            '100%': { transform: 'scale(1.2)', opacity: '0.8', filter: 'blur(8px)' }
+                        },
+                        'energy-core': {
+                            '0%': { transform: 'scale(0.85)', filter: 'drop-shadow(0 0 15px currentColor)' },
+                            '100%': { transform: 'scale(1.05)', filter: 'drop-shadow(0 0 40px currentColor)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 
+         * ==========================================
+         * 生产环境落地指南 (Production Handoff Notes)
+         * ==========================================
+         * 1. 动效引擎: 当前使用原生 Tailwind CSS + Keyframes 实现。在实际 React/Vue 项目中，
+         *    如果要追求更丝滑的高帧率体验，建议将 background-blur 和 blob 动画交由 Framer Motion 或 GSAP 接管。
+         * 2. 状态机 (State Machine): 实际使用时，去掉下方的 `onclick="handleScreenTap()"`，
+         *    将状态（Idle, Listening, Speaking, Warning）与真实的 WebSocket/WebRTC 事件绑定（如 vad_start, tts_start）。
+         */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Fira+Code:wght@400;500;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #fff; overflow: hidden; touch-action: manipulation; }
+        .font-mono { font-family: 'Fira Code', monospace; }
+        
+        /* Glassmorphism Widget (极致玻璃态悬浮卡片)
+           生产环境建议: 如果在低端安卓机上存在性能瓶颈，可退级为 bg-gray-900 border-gray-700 去掉 backdrop-filter */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .widget-anim { transform: translateX(120%) scale(0.95) rotateY(10deg); opacity: 0; transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); }
+        .widget-show { transform: translateX(0) scale(1) rotateY(0deg); opacity: 1; }
+
+        /* Fluid Voice Core (极客三层流体波形球体)
+           实现原理: 外环不规则旋转发光 + 中环重度模糊(blur)扩散 + 内核高光。
+           生产环境建议: 这种纯 CSS 的软渲染极为逼真，但如果要加入随音频音量大小(Volume)改变大小的物理特性，应该用 JS 实时修改 scale 值。*/
+        .voice-core-container { position: relative; width: 160px; height: 160px; display: flex; align-items: center; justify-content: center; transition: color 0.5s ease; }
+        .state-idle { color: #1e3a8a; } .state-listening { color: #06b6d4; } .state-speaking { color: #3b82f6; } .state-warning { color: #f97316; }
+
+        .ring-outer { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px solid currentColor; opacity: 0.3; animation: energy-ring 3s infinite alternate; transition: all 0.1s; }
+        .ring-inner { position: absolute; width: 70%; height: 70%; border-radius: 50%; background: currentColor; opacity: 0.15; filter: blur(10px); animation: ping-slow 2s infinite; transition: all 0.1s; }
+        .core-orb { position: absolute; width: 40%; height: 40%; border-radius: 50%; background: currentColor; box-shadow: inset 0 0 20px rgba(255,255,255,0.5); animation: energy-core 1s infinite alternate; transition: all 0.05s ease-out; }
+
+        /* 极致发光进度条 */
+        .glow-progress { box-shadow: 0 0 10px currentColor, 0 0 20px currentColor; }
+
+        /* 打字机特效光标 */
+        .typing-cursor::after { content: '█'; animation: blink 1s step-end infinite; color: #10b981; margin-left: 2px;}
+        .inline-cursor::after { content: '▍'; animation: blink 0.8s step-end infinite; color: currentColor; opacity: 0.7; margin-left: 2px;}
+        @keyframes blink { 50% { opacity: 0; } }
+        
+        .terminal-bg { background: #000; z-index: 50; transition: opacity 0.8s; opacity: 0; pointer-events: none; }
+        .terminal-show { opacity: 1; pointer-events: auto; }
+        .text-glow { text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        
+        .subtitle-mask { mask-image: linear-gradient(to top, black 60%, transparent 100%); -webkit-mask-image: linear-gradient(to top, black 50%, transparent 100%); }
+        
+        /* Stream Bubble Base */
+        .chat-bubble { transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1); transform-origin: left bottom; }
+    </style>
+</head>
+<body class="h-screen w-screen relative overflow-hidden flex flex-col justify-between cursor-pointer" onclick="handleScreenTap()">
+
+    <!-- 极光背景 -->
+    <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-60">
+        <div class="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full bg-blue-900/30 mix-blend-screen filter blur-[100px] animate-blob"></div>
+        <div id="bg-aura" class="absolute top-[20%] right-[-10%] w-[70%] h-[70%] rounded-full bg-cyan-900/20 mix-blend-screen filter blur-[120px] animate-blob animation-delay-2000 transition-colors duration-700"></div>
+        <div class="absolute bottom-[-20%] left-[10%] w-[80%] h-[80%] rounded-full bg-indigo-900/30 mix-blend-screen filter blur-[100px] animate-blob animation-delay-4000"></div>
+    </div>
+
+    <!-- HUD Widget 悬浮卡片 -->
+    <div id="widget" class="fixed top-16 right-4 w-56 glass-panel rounded-2xl p-4 widget-anim z-30 pointer-events-none">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+                <div id="widget-dot" class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></div>
+                <span class="text-[10px] text-gray-300 font-mono font-medium tracking-wide uppercase" id="widget-title">WEBHOOK</span>
+            </div>
+            <span id="widget-status" class="text-[9px] font-mono text-blue-400 uppercase tracking-widest">RUNNING</span>
+        </div>
+        <div id="widget-task" class="text-sm font-semibold text-white/90 mb-3 truncate drop-shadow-md">Draft Email...</div>
+        <div class="w-full bg-black/40 rounded-full h-1.5 overflow-hidden border border-white/5 relative">
+            <div id="widget-progress" class="h-full bg-blue-500 glow-progress text-blue-500 rounded-full" style="width: 0%; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+        </div>
+        <div id="widget-log-container" class="mt-3 pt-3 border-t border-white/10 hidden">
+            <div class="font-mono text-[9px] text-emerald-400/90 break-words leading-relaxed" id="widget-log">> MATCH FOUND</div>
+        </div>
+    </div>
+
+    <!-- 视觉中心：流体发光球 -->
+    <div class="flex-1 flex flex-col items-center justify-center relative z-20 pointer-events-none">
+        <div id="voice-core" class="voice-core-container state-idle">
+            <div class="ring-outer" id="ring-outer"></div>
+            <div class="ring-inner" id="ring-inner"></div>
+            <div class="core-orb" id="core-orb"></div>
+        </div>
+        
+        <div id="hook-text" class="absolute bottom-4 text-center font-mono text-[11px] tracking-widest text-cyan-400 opacity-0 transition-opacity duration-500 text-glow">
+            COLD START &lt; 800MS
+        </div>
+    </div>
+
+    <!-- 舞台底部字幕区 -->
+    <div class="h-[35%] w-full p-6 flex flex-col justify-end pb-12 z-20 pointer-events-none subtitle-mask">
+        <div id="chat-container" class="flex flex-col gap-3 w-full justify-end min-h-full">
+            <!-- Bubbles injected via JS -->
+        </div>
+    </div>
+
+    <!-- 结尾终端覆盖层 -->
+    <div id="terminal" class="terminal-bg inset-0 absolute flex items-center justify-center flex-col">
+        <div class="w-full max-w-md p-8">
+            <div id="typing-text" class="text-emerald-400 font-mono text-sm typing-cursor mb-6 leading-relaxed flex flex-col items-start w-full mx-auto"></div>
+            <div id="final-slogan" class="text-center mt-16 opacity-0 transition-all duration-1000 translate-y-8 flex flex-col items-center">
+                <h1 class="text-3xl font-bold mb-4 tracking-tight drop-shadow-2xl">构建企业级超级助理</h1>
+                <p class="text-sm font-medium tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 pb-2">只需一行代码，注入亿级通话并发底座</p>
+                <div class="mt-12 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md">
+                    <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"></path></svg>
+                    <span class="font-mono text-[10px] text-gray-300 tracking-wider">github.com/zego/openclaw-voice-gateway</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 幻灯片指示器/提示 -->
+    <div class="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10 pointer-events-none">
+        <div class="text-[10px] text-white/40 font-mono tracking-widest uppercase animate-pulse">Tap screen to advance</div>
+        <div class="flex gap-1 mt-1" id="dots"></div>
+    </div>
+
+    <script>
+        // Data Structure V4: Every block represents a full "User -> AI" turn, or a specific interrupt sequence.
+        // We removed the forced separation. AI will start talking shortly after User finishes (or immediately).
+        const scenes = [
+            { type: 'init', widget: 'hidden' }, // index 0
+
+            // Scene 1: Fast Start
+            { 
+              type: 'turn',
+              user: '“早，Jarvis。”', 
+              ai: '“早上好，先生。”', 
+              hook: 'COLD START < 800MS\nFULL-DUPLEX VOICE',
+              aiDelay: 50 // ms to wait after user finishes before AI starts (Simulating ultra-fast response)
+            },
+            
+            // Scene 2: Weather Query
+            { 
+              type: 'turn',
+              user: '“今天外面多少度？”', 
+              ai: '“目前 15 到 20 度，温度适中。”', 
+              hook: 'FAST AGENT 超低延迟',
+              aiDelay: 100 
+            },
+
+            // Scene 3: Memory & Interruption part 1
+            { 
+              type: 'turn',
+              user: '“昨天小王的合作邮件收到了吗？”', 
+              ai: '“收到了。他回复说这周没时…”', 
+              hook: 'CONTEXTUAL MEMORY\nZERO-BLOCKING BARGE-IN',
+              widget: 'show', widgetTitle: 'MEMORY SYNC', widgetTask: 'Query: "小王", "邮件"', widgetLog: 'MATCH FOUND in memory.db', status: 'DONE', statusColor: 'text-emerald-400', progress: 100,
+              aiDelay: 200,
+              interruptAI: true // AI will stop typing and stay pending until next click
+            },
+
+            // Scene 4: Interruption part 2
+            { 
+              type: 'turn',
+              user: '“算了，不用念了。”', 
+              ai: '“好的。”', 
+              hook: 'BARGE-IN / 真实打断',
+              widget: 'hidden',
+              aiDelay: 0, // AI Instant ACK
+              userInterruptsPreviousAI: true // Visual flag to cut off previous AI text
+            },
+
+            // Scene 5: Async Task
+            { 
+              type: 'turn',
+              user: '“那你帮我拟一封邮件回给小王，约下周一。”', 
+              ai: '“好的，我会在后台处理并发送。”', 
+              hook: 'ASYNCHRONOUS TOOL CALLING',
+              widget: 'show', widgetTitle: 'MAIN AGENT', widgetTask: 'Draft & Send Email...', widgetLog: '> Initiating bg task...', progress: 5, animProgress: true, status: 'RUNNING', statusColor: 'text-blue-400',
+              aiDelay: 300
+            },
+
+            // Scene 6: Concurrent playback
+            { 
+              type: 'turn',
+              user: '“再帮我定个今天下午 15:00…”', 
+              ai: '【主动插播】“向您汇报，给小王的邮件已发出。”', 
+              hook: 'PRIORITY SPEECH INJECTING...',
+              widget: 'update', widgetTitle: 'MAIN AGENT', widgetTask: 'Email Sent successfully', widgetLog: 'EVENT: priority_speech', progress: 100, animProgress: false, status: 'SUCCESS', statusColor: 'text-emerald-400',
+              aiDelay: 10,
+              userCutoffMidway: true, // Used to stop User mid-sentence if needed, but visually user finishes first then AI injects
+              aiWarn: true
+            },
+
+            // Scene 7: Resume
+            { 
+              type: 'turn',
+              user: '“好…下午 15:00 设个提醒联系小李。”', 
+              ai: '“好的，15:00 联系小李已提醒。”', 
+              hook: 'ZEGO 专属并发打断排队\n并发排队无缝恢复',
+              widget: 'hidden',
+              aiDelay: 150
+            },
+            
+            // Scene 8: End
+            { type: 'terminal' }
+        ];
+
+        let currentStep = 0;
+        let isTyping = false;
+        let skipRequested = false;
+        let typeInterval = null;
+        let pInterval = null;
+        let currentRole = null; // 'user' or 'ai'
+        
+        // Init UI dots
+        const dotsContainer = document.getElementById('dots');
+        scenes.forEach((s) => {
+            if(s.type !== 'init') {
+                const dot = document.createElement('div');
+                dot.className = `w-1.5 h-1.5 rounded-full transition-all duration-300 bg-white/20`;
+                dotsContainer.appendChild(dot);
+            }
+        });
+
+        function handleScreenTap() {
+            if (isTyping) {
+                // If currently typing anything, trigger skip for the current block
+                skipRequested = true;
+            } else {
+                nextScene();
+            }
+        }
+
+        function nextScene() {
+            if(currentStep < scenes.length - 1) {
+                currentStep++;
+                renderScene(scenes[currentStep]);
+            }
+        }
+
+        async function renderScene(scene) {
+            skipRequested = false;
+            updateDots(currentStep - 1);
+            
+            // Apply hooks & widgets immediately
+            if(scene.hook) {
+                const hEl = document.getElementById('hook-text');
+                hEl.innerHTML = scene.hook.replace('\n', '<br>');
+                hEl.classList.remove('opacity-0');
+            }
+
+            const widget = document.getElementById('widget');
+            clearInterval(pInterval);
+            if(scene.widget === 'show' || scene.widget === 'update') {
+                if(scene.widget === 'show') widget.classList.add('widget-show');
+                if(scene.widgetTitle) document.getElementById('widget-title').innerText = scene.widgetTitle;
+                if(scene.widgetTask) document.getElementById('widget-task').innerText = scene.widgetTask;
+                if(scene.status) {
+                    document.getElementById('widget-status').innerText = scene.status;
+                    document.getElementById('widget-status').className = `text-[9px] font-mono uppercase tracking-widest ${scene.statusColor || 'text-blue-400'}`;
+                    document.getElementById('widget-dot').className = `w-2 h-2 rounded-full ${scene.status === 'SUCCESS' || scene.status === 'DONE' ? 'bg-emerald-400' : 'bg-blue-400 animate-pulse'}`;
+                }
+                const bar = document.getElementById('widget-progress');
+                if(scene.status === 'SUCCESS' || scene.status === 'DONE') bar.className = 'h-full glow-progress rounded-full text-emerald-400 bg-emerald-400';
+                else bar.className = 'h-full glow-progress rounded-full text-blue-500 bg-blue-500';
+
+                if (scene.animProgress) {
+                    let p = scene.progress || 0;
+                    bar.style.width = p + '%';
+                    pInterval = setInterval(() => { if(p < 85) p += Math.random() * 3 + 1; bar.style.width = Math.min(p, 85) + '%'; }, 200);
+                } else if(scene.progress !== undefined) {
+                    bar.style.width = scene.progress + '%';
+                }
+                if(scene.widgetLog) {
+                    document.getElementById('widget-log-container').classList.remove('hidden');
+                    document.getElementById('widget-log').innerText = scene.widgetLog;
+                }
+            } else if(scene.widget === 'hidden') {
+                widget.classList.remove('widget-show');
+            }
+
+            if(scene.type === 'terminal') {
+                document.getElementById('terminal').classList.add('terminal-show');
+                playTerminalEffects();
+                return;
+            }
+
+            // Execute Turn (User then AI)
+            if(scene.type === 'turn') {
+                isTyping = true;
+
+                // Handle visual interruption of previous AI bubble if required
+                if(scene.userInterruptsPreviousAI) {
+                    const container = document.getElementById('chat-container');
+                    const lastEl = container.lastElementChild;
+                    if(lastEl && lastEl.dataset.role === 'ai') {
+                        lastEl.innerHTML += ' <span class="text-red-500 animate-pulse font-bold">||</span>';
+                    }
+                }
+
+                // 1. User Types
+                setCoreState('state-listening', 'bg-cyan-900/30');
+                await streamText(scene.user, false);
+                
+                // If skip was requested during User block, we reset it so we can skip AI block if needed
+                skipRequested = false; 
+                
+                // 2. Delay before AI
+                if(!skipRequested && scene.aiDelay > 0) {
+                    await new Promise(r => setTimeout(r, scene.aiDelay));
+                }
+
+                // 3. AI Types
+                if(scene.aiWarn) {
+                    setCoreState('state-warning', 'bg-orange-900/30');
+                } else {
+                    setCoreState('state-speaking', 'bg-blue-900/30');
+                }
+                
+                await streamText(scene.ai, true, scene.interruptAI);
+                
+                isTyping = false;
+                
+                // Return to idle if AI is completely finished
+                if(!scene.interruptAI) {
+                    setTimeout(() => { if(!isTyping) setCoreState('state-idle', 'bg-indigo-900/20'); }, 1000);
+                }
+            }
+        }
+
+        function setCoreState(waveClass, bgClass) {
+            document.getElementById('voice-core').className = `voice-core-container ${waveClass}`;
+            document.getElementById('bg-aura').className = `absolute top-[20%] right-[-10%] w-[70%] h-[70%] rounded-full mix-blend-screen filter blur-[120px] animate-blob animation-delay-2000 transition-colors duration-1000 ${bgClass}`;
+        }
+
+        // Returns a Promise that resolves when typing finishes
+        function streamText(text, isAI, leaveCursor = false) {
+            return new Promise((resolve) => {
+                const container = document.getElementById('chat-container');
+                const bubble = document.createElement('div');
+                
+                let baseClass = 'chat-bubble inline-cursor ';
+                if(isAI) baseClass += 'text-xl font-semibold text-white text-glow drop-shadow-lg';
+                else baseClass += 'text-sm font-medium text-gray-400/90';
+                
+                bubble.className = baseClass + ' opacity-100 scale-100 blur-none';
+                bubble.dataset.role = isAI ? 'ai' : 'user';
+                
+                container.appendChild(bubble);
+                refreshHistoryStyles(container);
+
+                let index = 0;
+                
+                function typeChar() {
+                    if(skipRequested) {
+                        // Fast forward
+                        bubble.innerHTML = text;
+                        if(!leaveCursor) bubble.classList.remove('inline-cursor');
+                        resolve();
+                        return;
+                    }
+
+                    if(index < text.length) {
+                        let char = text[index++];
+                        bubble.innerHTML = text.substring(0, index);
+                        
+                        triggerCorePulse(isAI);
+                        
+                        // 模拟真实人类说话语速（中文平均每秒 4-6 个字）
+                        // 用户 (ASR) 带有更随机的停顿，AI (TTS) 相对更匀速但速度更贴近真实播报
+                        let delay = isAI ? Math.random() * 50 + 150 : Math.random() * 80 + 200; 
+                        if(['。','，','！','？'].includes(char) && isAI) delay += 100;
+                        
+                        setTimeout(typeChar, delay);
+                    } else {
+                        if(!leaveCursor) bubble.classList.remove('inline-cursor');
+                        resolve();
+                    }
+                }
+                typeChar();
+            });
+        }
+
+        function triggerCorePulse(isAI) {
+            const orb = document.getElementById('core-orb');
+            const inner = document.getElementById('ring-inner');
+            orb.style.transform = isAI ? 'scale(1.2)' : 'scale(1.05)';
+            inner.style.transform = 'scale(1.1)';
+            setTimeout(() => {
+                orb.style.transform = '';
+                inner.style.transform = '';
+            }, 40);
+        }
+
+        function refreshHistoryStyles(container) {
+            const children = Array.from(container.children).reverse();
+            children.forEach((el, age) => {
+                const isAI = el.dataset.role === 'ai';
+                if(age === 0) {
+                    el.style.opacity = '1'; el.style.transform = 'translateY(0) scale(1)'; el.style.filter = 'blur(0)';
+                } else if(age === 1) {
+                    // 保留最近两行（通常是同一个回合的User与AI）清晰可见
+                    el.style.opacity = isAI ? '0.9' : '0.8'; el.style.transform = 'translateY(-4px) scale(0.98)'; el.style.filter = 'blur(0)';
+                    el.classList.remove('inline-cursor');
+                } else if(age === 2) {
+                    el.style.opacity = isAI ? '0.3' : '0.2'; el.style.transform = 'translateY(-12px) scale(0.92)'; el.style.filter = 'blur(2px)';
+                    el.classList.remove('inline-cursor');
+                } else if(age === 3) {
+                    el.style.opacity = '0.05'; el.style.transform = 'translateY(-20px) scale(0.85)'; el.style.filter = 'blur(5px)';
+                    el.classList.remove('inline-cursor');
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+        }
+
+        function updateDots(index) {
+            document.querySelectorAll('#dots > div').forEach((dot, i) => {
+                dot.className = `w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === index ? 'bg-white/90 w-3' : 'bg-white/20'}`;
+            });
+        }
+
+        async function playTerminalEffects() {
+            setCoreState('state-idle', 'bg-indigo-900/20');
+            const lines = [
+                {text: "$ npm install @zego/openclaw-voice-gateway", delay: 30},
+                {text: "", delay: 300},
+                {text: "> fetching metadata...", delay: 20, class: "text-gray-500"},
+                {text: "> checking dependencies...", delay: 20, class: "text-gray-500"},
+                {text: "✔ Installation complete.", delay: 0, class: "text-emerald-400 font-bold mt-2"},
+            ];
+            const el = document.getElementById('typing-text');
+            for(let line of lines) {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = `w-full ${line.class || ''}`;
+                el.appendChild(lineDiv);
+                if(line.delay > 0 && line.text.includes('$')) {
+                    for(let i=0; i<=line.text.length; i++) {
+                        lineDiv.innerText = line.text.substring(0, i);
+                        await new Promise(r => setTimeout(r, line.delay + Math.random()*20));
+                    }
+                } else { lineDiv.innerText = line.text; }
+                await new Promise(r => setTimeout(r, line.delay));
+            }
+            setTimeout(() => { document.getElementById('final-slogan').classList.remove('opacity-0', 'translate-y-8'); }, 800);
+        }
+
+        // Bootstrap
+        renderScene(scenes[0]);
+    </script>
+</body>
+</html>
