@@ -1,0 +1,4 @@
+{"timestamp":1773387438101,"patch":{"mode":"session_start","metadata":{"text_input":"现在几点了？"}},"callId":"call_102"}
+{"timestamp":1773387440161,"patch":{"mode":"task_delegated","task_id":"auto_generated"},"callId":"call_102"}
+{"timestamp":1773387481336,"patch":{"mode":"session_start","metadata":{"text_input":"现在几点了？"}},"callId":"call_102"}
+{"timestamp":1773387483350,"patch":{"mode":"task_delegated","task_id":"auto_generated"},"callId":"call_102"}

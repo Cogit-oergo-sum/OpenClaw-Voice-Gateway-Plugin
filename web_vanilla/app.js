@@ -167,7 +167,102 @@ btnEnd.addEventListener('click', async () => {
     await doTeardown(false);
 });
 
-// 响应离开或页面刷新
-window.addEventListener('beforeunload', () => {
-    doTeardown(true);
+// --- 6. Fast Agent 文本互动 (SSE) ---
+const chatInput = document.getElementById('chat-input');
+const btnSend = document.getElementById('btn-send');
+const chatWindow = document.getElementById('chat-window');
+
+function appendChat(content, type = 'ai') {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `chat-msg ${type}`;
+    
+    const label = document.createElement('span');
+    label.className = 'chat-label';
+    label.innerText = type === 'user' ? '[You]: ' : '[Jarvis]: ';
+    msgDiv.appendChild(label);
+
+    const body = document.createElement('span');
+    body.className = 'chat-body';
+    body.innerText = content;
+    msgDiv.appendChild(body);
+    
+    chatWindow.appendChild(msgDiv);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return body;
+}
+
+btnSend.addEventListener('click', async () => {
+    const text = chatInput.value.trim();
+    if (!text) return;
+
+    chatInput.value = '';
+    appendChat(text, 'user');
+
+    const aiBody = appendChat('', 'ai');
+    let aiFullContent = '';
+    let isRelaying = false;
+
+    try {
+        const response = await fetch(`${GATEWAY_URL}/voice/text-chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.replace('data: ', '').trim();
+                    if (dataStr === '[DONE]') break;
+
+                    try {
+                        const data = JSON.parse(dataStr);
+                        if (data.type === 'filler') {
+                            // SLC 抢跑流
+                            const span = document.createElement('span');
+                            span.className = 'relay-slc';
+                            span.innerText = data.content;
+                            aiBody.appendChild(span);
+                        } else if (data.type === 'thought') {
+                            // 系统/逻辑思考中
+                            const thought = document.createElement('div');
+                            thought.className = 'chat-msg thought';
+                            thought.innerText = data.content;
+                            chatWindow.appendChild(thought);
+                        } else if (data.type === 'text') {
+                            // SLE 逻辑接力流
+                            if (!isRelaying) {
+                                isRelaying = true;
+                                const dot = document.createElement('span');
+                                dot.innerText = ' ... ';
+                                aiBody.appendChild(dot);
+                            }
+                            const span = document.createElement('span');
+                            span.className = 'relay-sle';
+                            span.innerText = data.content;
+                            aiBody.appendChild(span);
+                        }
+                    } catch (e) {
+                        // 忽略非 JSON 行
+                    }
+                }
+            }
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+    } catch (e) {
+        log('❌ 文本对话异常: ' + e.message);
+    }
+});
+
+chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') btnSend.click();
 });

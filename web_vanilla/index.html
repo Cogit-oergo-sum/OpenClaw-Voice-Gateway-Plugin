@@ -17,6 +17,20 @@
         .tag { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
         .tag.idle { background: #e9ecef; color: #495057; }
         .tag.active { background: #d4edda; color: #155724; }
+        
+        .chat-container { margin-top: 2rem; border-top: 2px dashed #eee; padding-top: 1rem; }
+        .chat-window { height: 300px; overflow-y: auto; background: #282c34; color: #abb2bf; padding: 1rem; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.9rem; margin-bottom: 1rem; }
+        .chat-msg { margin-bottom: 0.5rem; line-height: 1.4; }
+        .chat-msg.user { color: #61afef; }
+        .chat-msg.ai { color: #98c379; }
+        .chat-msg.filler { color: #e5c07b; font-style: italic; opacity: 0.9; }
+        .chat-msg.thought { color: #c678dd; font-size: 0.8rem; opacity: 0.8; margin-left: 1rem; border-left: 2px solid #555; padding-left: 0.5rem; }
+        .relay-slc { color: #e5c07b; font-style: italic; border-bottom: 1px dashed #555; }
+        .relay-sle { color: #98c379; }
+        .chat-label { font-weight: bold; margin-right: 0.5rem; }
+        .chat-input-group { display: flex; gap: 0.5rem; }
+        .chat-input-group input { flex: 1; padding: 0.8rem; border: 1px solid #ccc; border-radius: 8px; outline: none; }
+        .chat-input-group button { background: #34c759; color: white; }
     </style>
     <!-- 从 CDN 引入 ZEGO Express Web SDK -->
     <script src="https://unpkg.com/zego-express-engine-webrtc@3.5.0/zego-express-engine-webrtc.js"></script>
@@ -35,6 +49,17 @@
             <div id="log-console" class="status-box">--- 等待操作 ---</div>
             
             <audio id="remote-audio" autoplay style="display:none;"></audio>
+        </div>
+
+        <div class="chat-container">
+            <h3>🚀 Fast Agent 文本仿真互动 (Text-MVP)</h3>
+            <div id="chat-window" class="chat-window">
+                <div class="chat-msg ai">[Jarvis]: 早上好，先生。有什么我可以帮您的？</div>
+            </div>
+            <div class="chat-input-group">
+                <input type="text" id="chat-input" placeholder="输入信息，体验 Fast Agent 响应逻辑..." />
+                <button id="btn-send">发送</button>
+            </div>
         </div>
     </div>
 

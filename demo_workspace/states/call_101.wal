@@ -1,0 +1,4 @@
+{"timestamp":1773387434138,"patch":{"mode":"session_start","metadata":{"text_input":"你好，Jarvis，帮我给张三发个邮件告知他重构进度。"}},"callId":"call_101"}
+{"timestamp":1773387436649,"patch":{"mode":"task_delegated","task_id":"auto_generated"},"callId":"call_101"}
+{"timestamp":1773387476769,"patch":{"mode":"session_start","metadata":{"text_input":"你好，Jarvis，帮我给张三发个邮件告知他重构进度。"}},"callId":"call_101"}
+{"timestamp":1773387479075,"patch":{"mode":"task_delegated","task_id":"auto_generated"},"callId":"call_101"}
