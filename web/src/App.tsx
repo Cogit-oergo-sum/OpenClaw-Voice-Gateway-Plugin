@@ -15,7 +15,8 @@ function App() {
     pulseTrigger,
     isConnected,
     startCall,
-    endCall
+    endCall,
+    sendTestTTS
   } = useAgent();
 
   return (
@@ -53,11 +54,19 @@ function App() {
       )}
 
       {isConnected && (
-        <div 
-          onClick={(e) => { e.stopPropagation(); endCall(); }}
-          className="fixed bottom-10 left-1/2 -translate-x-1/2 z-40 px-6 py-2 rounded-full border border-red-500/30 bg-red-500/10 backdrop-blur-md text-red-500 font-mono text-xs tracking-widest hover:bg-red-500/20 transition-all pointer-events-auto cursor-pointer"
-        >
-          HANG UP
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-40 flex gap-4">
+          <div 
+            onClick={(e) => { e.stopPropagation(); sendTestTTS(); }}
+            className="px-6 py-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 backdrop-blur-md text-cyan-400 font-mono text-xs tracking-widest hover:bg-cyan-500/20 transition-all pointer-events-auto cursor-pointer"
+          >
+            TEST TTS
+          </div>
+          <div 
+            onClick={(e) => { e.stopPropagation(); endCall(); }}
+            className="px-6 py-2 rounded-full border border-red-500/30 bg-red-500/10 backdrop-blur-md text-red-500 font-mono text-xs tracking-widest hover:bg-red-500/20 transition-all pointer-events-auto cursor-pointer"
+          >
+            HANG UP
+          </div>
         </div>
       )}
 

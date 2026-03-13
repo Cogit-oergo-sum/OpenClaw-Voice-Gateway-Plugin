@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { generateToken04 as internalGenerateToken04 } from './zego/token/zegoServerAssistant';
 
 /**
  * 构造 ZEGO 服务端 API 调用所需的鉴权参数 (Signature, Nonce, Timestamp)
@@ -42,9 +43,5 @@ export function generateToken04(
     effectiveTimeInSeconds: number = 3600 * 24, // 默认 24 小时
     payload: string = ''
 ): string {
-    // TODO: 生产环境需要引入 ZEGO 官方 Token 生成器
-    // 这里使用一个简单的 mock Token 以允许编译通过和基础联调
-    const data = JSON.stringify({ appId, userId, payload, exp: Math.floor(Date.now() / 1000) + effectiveTimeInSeconds });
-    const mockToken = Buffer.from(data).toString('base64');
-    return `04${mockToken}`;
+    return internalGenerateToken04(appId, userId, serverSecret, effectiveTimeInSeconds, payload);
 }

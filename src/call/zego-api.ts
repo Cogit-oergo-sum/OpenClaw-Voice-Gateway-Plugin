@@ -15,7 +15,7 @@ export class ZegoApiClient {
     private baseUrl: string;
     private appId: number;
     private serverSecret: string;
-    private agentId: string = 'openclaw_voice_agent';
+    private agentId: string = 'openclaw_voice_agent_v9';
 
     constructor(config: ZegoConfig) {
         this.baseUrl = config.aiAgentBaseUrl;
@@ -28,16 +28,17 @@ export class ZegoApiClient {
      */
     private buildAuthQueryParams(): string {
         const auth = generateZegoAuth(this.appId, this.serverSecret);
-        return `?AppId=${this.appId}&SignatureNonce=${auth.nonce}&Timestamp=${auth.timestamp}&Signature=${auth.signature}`;
+        return `?AppId=${this.appId}&SignatureNonce=${auth.nonce}&Timestamp=${auth.timestamp}&Signature=${auth.signature}&SignatureVersion=2.0`;
     }
 
     /**
      * 发送 POST 请求到 ZEGO Server
      */
     private async post<T>(action: string, payload: any): Promise<T> {
-        const url = `${this.baseUrl}/${action}${this.buildAuthQueryParams()}`;
+        const url = `${this.baseUrl}/${this.buildAuthQueryParams()}&Action=${action}`;
 
         try {
+            console.log(`[ZegoApiClient] Calling ${action} with Payload:`, JSON.stringify(payload, null, 2));
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -47,6 +48,8 @@ export class ZegoApiClient {
             });
 
             if (!response.ok) {
+                const errText = await response.text();
+                console.error(`[ZegoApiClient] HTTP ${response.status}: ${errText}`);
                 throw new Error(`ZEGO API Error: ${response.status} ${response.statusText}`);
             }
 
@@ -63,7 +66,7 @@ export class ZegoApiClient {
     }
 
     /**
-     * 注册/更新智能体配置 (仅在 Plugin 启动时调用一次)
+     * 注册智能体配置
      */
     async registerAgent(params: RegisterAgentParams): Promise<void> {
         const payload: any = {
@@ -74,7 +77,7 @@ export class ZegoApiClient {
                 ApiKey: params.llm.apiKey,
                 Model: params.llm.model,
                 BaseUrl: params.llm.baseUrl,
-                AddAgentInfo: true // 告诉 ZEGO把 user_id, stream_id 等信息在请求大模型时带过来
+                AddAgentInfo: true
             },
             TTS: {
                 Vendor: params.tts.vendor,
@@ -98,15 +101,52 @@ export class ZegoApiClient {
     }
 
     /**
+     * 更新智能体配置
+     */
+    async updateAgent(params: RegisterAgentParams): Promise<void> {
+        const payload: any = {
+            AgentId: this.agentId,
+            Name: 'OpenClaw Voice Agent',
+            LLM: {
+                Url: params.llmUrl,
+                ApiKey: params.llm.apiKey,
+                Model: params.llm.model,
+                BaseUrl: params.llm.baseUrl,
+                AddAgentInfo: true
+            },
+            TTS: {
+                Vendor: params.tts.vendor,
+                Params: {
+                    app: { appid: params.tts.appId, token: params.tts.token, cluster: "volcano_tts" },
+                    audio: { voice_type: params.tts.voiceType }
+                }
+            }
+        };
+
+        if (params.asr) {
+            payload.ASR = {
+                Vendor: params.asr.vendor,
+                Params: params.asr.params,
+                VadSilenceSegmentation: params.asr.vadSilenceSegmentation
+            };
+        }
+
+        await this.post('UpdateAgent', payload);
+        console.log(`[ZegoApiClient] Agent updated: ${this.agentId}`);
+    }
+
+    /**
      * 为具体的一通电话创建智能体实例
      */
-    async createAgentInstance(rtcRoomId: string, rtcUserId: string, rtcStreamId: string): Promise<string> {
+    async createAgentInstance(rtcRoomId: string, rtcUserId: string, agentStreamId: string, userStreamId: string): Promise<string> {
         const payload = {
             AgentId: this.agentId,
+            UserId: rtcUserId,
             RTC: {
                 RoomId: rtcRoomId,
-                UserId: rtcUserId,
-                StreamId: rtcStreamId
+                AgentUserId: 'openclaw_voice_agent',
+                AgentStreamId: agentStreamId,
+                UserStreamId: userStreamId
             }
         };
 

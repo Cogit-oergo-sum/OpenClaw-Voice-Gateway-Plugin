@@ -41,7 +41,7 @@ export function startCallHandler(manager: CallManager, config: ZegoConfig) {
             try {
                 // 5. 调用 ZEGO AI Agent 服务端 API 创建实例
                 // 注意：ZEGO 官方要求真实 RTC roomId, userId
-                agentInstanceId = await manager.api.createAgentInstance(roomId, userId, agentStreamId);
+                agentInstanceId = await manager.api.createAgentInstance(roomId, userId, agentStreamId, userStreamId);
             } catch (createError) {
                 // 核心修复: 立即清理由于建联失败占用的本地并发坑位，防永久死锁
                 await manager.removeCall(userId);

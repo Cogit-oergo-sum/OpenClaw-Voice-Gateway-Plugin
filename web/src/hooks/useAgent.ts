@@ -4,7 +4,7 @@ import type { AgentState } from '../components/FluidVoiceCore';
 import type { Message } from '../components/SubtitleStream';
 import type { WidgetData } from '../components/GlassWidget';
 
-const GATEWAY_URL = 'http://localhost:18789';
+const GATEWAY_URL = 'http://localhost:18790';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
 
 export function useAgent() {
@@ -36,12 +36,15 @@ export function useAgent() {
 
   const startCall = async () => {
     if (isConnected) return;
-    
+
     try {
       setHookText('REQUESTING ACCESS...');
       const res = await fetch(`${GATEWAY_URL}/voice/start-call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'test-token-12345'
+        },
         body: JSON.stringify({ userId: MOCK_USER_ID })
       });
 
@@ -51,8 +54,8 @@ export function useAgent() {
       roomId.current = data.roomId;
 
       if (!zgRef.current) {
-        zgRef.current = new ZegoExpressEngine(0, 'wss://webliveroom-test.zego.im/ws');
-        
+        zgRef.current = new ZegoExpressEngine(1623602215, 'wss://webliveroom1623602215-api.zego.im/ws');
+
         // Listen for experimental API (Subtitles)
         zgRef.current.on('recvExperimentalAPI', (result: any) => {
           const { method, content } = result;
@@ -60,7 +63,7 @@ export function useAgent() {
             try {
               const recvMsg = JSON.parse(content.msgContent);
               const { Cmd, Data } = recvMsg;
-              
+
               if (Cmd === 3) { // ASR (User)
                 setState('listening');
                 setMessages(prev => {
@@ -73,7 +76,7 @@ export function useAgent() {
                   return [...prev, { id: Date.now().toString(), role: 'user', text: Data.Text, isTyping: !Data.EndFlag }];
                 });
                 if (Data.EndFlag) {
-                   setTimeout(() => setState('idle'), 1000);
+                  setTimeout(() => setState('idle'), 1000);
                 }
               } else if (Cmd === 4) { // LLM (Agent)
                 setState('speaking');
@@ -88,7 +91,7 @@ export function useAgent() {
                   return [...prev, { id: Date.now().toString(), role: 'agent', text: Data.Text, isTyping: !Data.EndFlag }];
                 });
                 if (Data.EndFlag) {
-                   setTimeout(() => setState('idle'), 1000);
+                  setTimeout(() => setState('idle'), 1000);
                 }
               }
             } catch (error) {
@@ -97,13 +100,21 @@ export function useAgent() {
           }
         });
 
-        zgRef.current.on('roomStreamUpdate', async (_: string, updateType: string, streamList: any[]) => {
+        zgRef.current.on('roomStreamUpdate', async (roomID: string, updateType: string, streamList: any[]) => {
+          log(`roomStreamUpdate: ${updateType}, room: ${roomID}, streams: ${JSON.stringify(streamList)}`);
           if (updateType === 'ADD') {
             for (const stream of streamList) {
+              log(`Checking stream: ${stream.streamID}, target: ${data.agentStreamId}`);
               if (stream.streamID === data.agentStreamId) {
+                log('Found AI stream, starting playback...');
                 const remoteStream = await zgRef.current!.startPlayingStream(stream.streamID);
                 const audio = document.getElementById('remote-audio') as HTMLAudioElement;
-                if (audio) audio.srcObject = remoteStream;
+                if (audio) {
+                  audio.srcObject = remoteStream;
+                  audio.play().catch(e => log('Audio play failed: ' + e.message));
+                } else {
+                  log('Error: remote-audio element not found');
+                }
               }
             }
           }
@@ -111,7 +122,7 @@ export function useAgent() {
       }
 
       await zgRef.current.loginRoom(data.roomId, data.token, { userID: MOCK_USER_ID, userName: 'Web_Test' });
-      
+
       const localStream = await zgRef.current.createStream({ camera: { audio: true, video: false } });
       localStreamRef.current = localStream;
       publishedStreamId.current = data.userStreamId || ('user_stream_' + Date.now());
@@ -122,7 +133,7 @@ export function useAgent() {
 
       setIsConnected(true);
       setHookText('COLD START < 800MS');
-      
+
       // Start Mock Webhook sequence
       startMockSequence();
 
@@ -134,14 +145,17 @@ export function useAgent() {
 
   const endCall = async () => {
     if (!isConnected) return;
-    
+
     try {
       await fetch(`${GATEWAY_URL}/voice/end-call`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'test-token-12345'
+        },
         body: JSON.stringify({ userId: MOCK_USER_ID, controlToken: currentControlToken.current })
       });
-    } catch (e) {}
+    } catch (e) { }
 
     if (zgRef.current) {
       if (publishedStreamId.current) {
@@ -185,6 +199,27 @@ export function useAgent() {
     }, 5000);
   };
 
+  const sendTestTTS = async () => {
+    if (!isConnected) return;
+    log('Sending manual test TTS...');
+    try {
+      const res = await fetch(`${GATEWAY_URL}/voice/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'test-token-12345'
+          },
+          body: JSON.stringify({
+              messages: [{ role: 'user', content: 'TEST_TTS_INTERNAL_TRIGGER' }],
+              agent_info: { agent_instance_id: 'CURRENT_SESSION' } // We will handle this mock logic in backend or just use raw API
+          })
+      });
+      if (!res.ok) log('Test TTS failed: ' + res.status);
+    } catch (e: any) {
+        log('Test TTS Error: ' + e.message);
+    }
+  };
+
   return {
     state,
     messages,
@@ -194,6 +229,7 @@ export function useAgent() {
     pulseTrigger,
     isConnected,
     startCall,
-    endCall
+    endCall,
+    sendTestTTS
   };
 }

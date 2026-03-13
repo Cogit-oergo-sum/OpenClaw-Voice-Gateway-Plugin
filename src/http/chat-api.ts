@@ -8,6 +8,13 @@ import { FastAgent, FastAgentResponse } from '../agent/fast-agent';
  */
 export function chatCompletionsHandler(manager: CallManager, config: PluginConfig, fastAgent: FastAgent) {
     return async (req: any, res: any) => {
+        if (req.method === 'GET') {
+            return res.send('[VoiceGateway] /chat/completions is online.');
+        }
+
+        const startTime = Date.now();
+        const requestID = Math.random().toString(36).substring(7);
+        
         try {
             const { messages, agent_info } = req.body;
             const instanceId = agent_info?.agent_instance_id;
@@ -32,7 +39,7 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
             const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
             const userText = lastUserMessage?.content || "";
 
-            console.log(`[chatCompletionsHandler] Routing to FastAgent Parallel Relay. Input: "${userText}"`);
+            console.log(`[chatCompletionsHandler] [REQ_${requestID}] Routing to FastAgent Parallel Relay. Input: "${userText}"`);
 
             let fullReply = "";
 
@@ -43,14 +50,15 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                 switch(chunk.type) {
                     case 'filler':
                     case 'text':
-                        openaiContent = chunk.content;
+                        // 净化文字 (剔除 Markdown 符号，防止 TTS 朗读异常) - 继承自用户自定义逻辑
+                        openaiContent = chunk.content.replace(/[\*#_>`~]/g, '');
                         break;
                     case 'bridge':
                         // 音流占位，发一个空格加换行触发 TTS 换气
                         openaiContent = " \n";
                         break;
                     case 'thought':
-                        // 思维链/工具通知，仅记录不播报 (或者根据配置决定)
+                        // 思维链/工具通知，仅记录不播报
                         console.log(`[Thought] ${chunk.content}`);
                         return; 
                 }
@@ -77,8 +85,10 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                 currentCallState.conversationBuffer.push({ role: 'assistant', content: fullReply });
             }
 
+            console.log(`[chatCompletionsHandler] [REQ_${requestID}] Done. Len: ${fullReply.length}, Total: ${Date.now() - startTime}ms`);
+
         } catch (error: any) {
-            console.error('[chatCompletionsHandler] Error:', error);
+            console.error(`[chatCompletionsHandler] [REQ_${requestID}] Error:`, error);
             if (!res.headersSent) {
                 res.status(500).json({ error: error.message });
             } else {
