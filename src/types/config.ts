@@ -37,10 +37,19 @@ export interface AdvancedConfig {
     fallbackMessage?: string;
 }
 
+export interface FastAgentInternalConfig {
+    version?: string;
+    slcModel?: string;
+    sleModel?: string;
+    slcBaseUrl?: string;
+    sleBaseUrl?: string;
+}
+
 export interface PluginConfig {
     zego: ZegoConfig;
     llm: LlmConfig;
     tts: TtsConfig;
     asr?: AsrConfig;
     advanced?: AdvancedConfig;
+    fastAgent?: FastAgentInternalConfig;
 }

@@ -1,0 +1,51 @@
+[
+  {
+    "id": "mil_01_emotion",
+    "type": "daily",
+    "input": "Jarvis，我今天真的累坏了，感觉整个项目进度都在我一个人肩膀上。",
+    "expected_behavior": "SLC 给出快速感性归位，SLE 深度共情且无报备词。",
+    "description": "压力缓解场景"
+  },
+  {
+    "id": "mil_09_greeting",
+    "type": "daily",
+    "input": "早安，Jarvis。",
+    "expected_behavior": "极简极速回复，无废话。",
+    "description": "冷启动模拟"
+  },
+  {
+    "id": "mil_02_weather",
+    "type": "fast",
+    "input": "帮我看看杭州西湖区现在天气怎么样？",
+    "expected_behavior": "SLC 严禁瞎猜回复‘天气很好’，只能垫词。SLE 触发天气工具。",
+    "description": "防幻觉/瞎猜场景"
+  },
+  {
+    "id": "mil_04_dry_phone",
+    "type": "fast",
+    "input": "帮我查一下 13812345678 这个号码归属地。",
+    "expected_behavior": "SLE 回复中严禁复述该手机号内容（DRY）。",
+    "description": "DRY 原则验证"
+  },
+  {
+    "id": "mil_05_long_job",
+    "type": "long",
+    "input": "帮我重构一下 src/agent 下的所有逻辑，提升并发稳定性。",
+    "expected_behavior": "触发 5s 异步转场话术，最终由 notifier 发送结果。",
+    "description": "长任务熔断闭闭环"
+  },
+  {
+    "id": "mil_08_slow_sle",
+    "type": "long",
+    "input": "计算 π 的第 100 万位是多少？",
+    "expected_behavior": "模拟 SLE 极慢响应，验证 1.2s Watchdog (Filler) 是否注入。",
+    "description": "1.2s 哨兵验证"
+  },
+  {
+    "id": "mil_06_clarify",
+    "type": "clarification",
+    "input": "帮我发邮件给张三。",
+    "expected_behavior": "SLE 应该询问邮件的主题或内容，而不是直接发空邮件。",
+    "description": "追问透传验证"
+  }
+]

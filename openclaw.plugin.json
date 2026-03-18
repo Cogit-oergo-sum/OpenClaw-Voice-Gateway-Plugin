@@ -1,0 +1,12 @@
+{
+  "id": "voice-gateway",
+  "name": "voice-gateway",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "description": "OpenClaw 语音通话网关插件",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}

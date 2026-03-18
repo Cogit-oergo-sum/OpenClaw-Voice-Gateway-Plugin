@@ -1,12 +1,12 @@
 import { CallManager } from '../call/call-manager';
 import type { PluginConfig } from '../types/config';
-import { FastAgent, FastAgentResponse } from '../agent/fast-agent';
+import { IFastAgent, FastAgentResponse } from '../agent/types';
 
 /**
  * [V1.6.0] chatCompletionsHandler: 
  * 桥接 ZEGO 与 FastAgent Parallel Relay 引擎
  */
-export function chatCompletionsHandler(manager: CallManager, config: PluginConfig, fastAgent: FastAgent) {
+export function chatCompletionsHandler(manager: CallManager, config: PluginConfig, fastAgent: IFastAgent) {
     return async (req: any, res: any) => {
         if (req.method === 'GET') {
             return res.send('[VoiceGateway] /chat/completions is online.');
@@ -36,30 +36,33 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
             res.setHeader('Connection', 'keep-alive');
 
             // 提取用户最后一句输入作为 FastAgent 的触发点
+            if (!messages || !Array.isArray(messages)) {
+                console.error(`[chatCompletionsHandler] [REQ_${requestID}] Invalid messages format:`, messages);
+                throw new Error("messages is not iterable");
+            }
             const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
             const userText = lastUserMessage?.content || "";
+            const handlerStart = Date.now();
 
-            console.log(`[chatCompletionsHandler] [REQ_${requestID}] Routing to FastAgent Parallel Relay. Input: "${userText}"`);
+            console.log(`[chatCompletionsHandler] [REQ_${requestID}] Routing to FastAgent. Input: "${userText}"`);
 
             let fullReply = "";
 
-            await fastAgent.process(userText, (chunk: FastAgentResponse) => {
-                // 将 FastAgent 的 Internal Response 转化为 OpenAI SSE 格式
+            await fastAgent.process(messages, (chunk: FastAgentResponse) => {
                 let openaiContent = "";
                 
                 switch(chunk.type) {
                     case 'filler':
                     case 'text':
-                        // 净化文字 (剔除 Markdown 符号，防止 TTS 朗读异常) - 继承自用户自定义逻辑
-                        openaiContent = chunk.content.replace(/[\*#_>`~]/g, '');
+                        // 1. 基础清理: 移除 Markdown 符号及所有换行符（防止换行导致字幕被切割成多条消息）
+                        openaiContent = chunk.content.replace(/[\*#>`~\n\r]/g, '');
+                        // [V1.8.1] 移除强制换行逻辑，确保全量内容归拢在单条消息字幕中，解决部分 UI 下显示不完全的问题
                         break;
                     case 'bridge':
-                        // 音流占位，发一个空格加换行触发 TTS 换气
-                        openaiContent = " \n";
+                        // 发送一个空格占位，驱动 ZEGO TTS 引擎提前进入就绪状态
+                        openaiContent = " ";
                         break;
                     case 'thought':
-                        // 思维链/工具通知，仅记录不播报
-                        console.log(`[Thought] ${chunk.content}`);
                         return; 
                 }
 
@@ -69,6 +72,15 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                         choices: [{ delta: { content: openaiContent }, finish_reason: null }]
                     };
                     res.write(`data: ${JSON.stringify(payload)}\n\n`);
+                }
+            }, async (notifyText) => {
+                // [异步通知] 当后台任务（超过5s）完成时，主动通过 ZEGO TTS 和 Context Message 触达用户
+                if (instanceId) {
+                    console.log(`[chatCompletionsHandler] Sending background notification to ${instanceId}`);
+                    // 1. 发送语音 (TTS)
+                    await manager.api.sendAgentInstanceTTS(instanceId, notifyText, 'Medium', 'Enqueue');
+                    // 2. 发送文本 (AddMsg) - 这将同步上下文到客户端，协助实现字幕显示
+                    await manager.api.addAgentInstanceMsg(instanceId, 'assistant', notifyText);
                 }
             });
 

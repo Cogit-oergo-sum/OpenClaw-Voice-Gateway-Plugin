@@ -17,10 +17,10 @@ export class ZegoApiClient {
     private serverSecret: string;
     private agentId: string = 'openclaw_voice_agent_v9';
 
-    constructor(config: ZegoConfig) {
-        this.baseUrl = config.aiAgentBaseUrl;
-        this.appId = config.appId;
-        this.serverSecret = config.serverSecret;
+    constructor(config: ZegoConfig = {} as any) {
+        this.baseUrl = config?.aiAgentBaseUrl || process.env.ZEGO_AI_AGENT_BASE_URL || 'https://aigc-aiagent-api.zegotech.cn';
+        this.appId = config?.appId || Number(process.env.ZEGO_APP_ID) || 0;
+        this.serverSecret = config?.serverSecret || process.env.ZEGO_SERVER_SECRET || '';
     }
 
     /**
@@ -177,5 +177,21 @@ export class ZegoApiClient {
             SamePriorityOption: samePriorityOption
         };
         return await this.post<any>('SendAgentInstanceTTS', payload);
+    }
+
+    /**
+     * [V1.9.0] 插入消息到智能体实例上下文列表 (解决文本通知缺失问题)
+     */
+    async addAgentInstanceMsg(agentInstanceId: string, role: 'user' | 'assistant', content: string): Promise<any> {
+        const payload = {
+            AgentInstanceId: agentInstanceId,
+            Messages: [
+                {
+                    Role: role,
+                    Content: content
+                }
+            ]
+        };
+        return await this.post<any>('AddAgentInstanceMsg', payload);
     }
 }

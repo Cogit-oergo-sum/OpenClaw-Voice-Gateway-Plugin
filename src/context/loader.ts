@@ -7,6 +7,9 @@ import * as os from 'os';
  * 优先级: 传入配置 -> 环境变量 OPENCLAW_PROFILE -> 默认 ~/.openclaw/workspace/
  */
 export function resolveWorkspacePath(configProfilePath?: string): string {
+    if (process.env.OPENCLAW_WORKSPACE) {
+        return path.resolve(process.env.OPENCLAW_WORKSPACE);
+    }
     if (configProfilePath) {
         return path.resolve(configProfilePath);
     }

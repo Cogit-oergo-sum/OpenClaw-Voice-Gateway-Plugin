@@ -1,5 +1,5 @@
 // 极简测试逻辑: HTTP 控制信令 + ZEGO RTC 引擎
-const GATEWAY_URL = 'http://localhost:18789';
+const GATEWAY_URL = 'http://localhost:18795';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
 
 const btnStart = document.getElementById('btn-start');
@@ -172,6 +172,25 @@ const chatInput = document.getElementById('chat-input');
 const btnSend = document.getElementById('btn-send');
 const chatWindow = document.getElementById('chat-window');
 
+// [V1.9.0] 订阅背景事件总线，实现异步通知的仿真展示
+let eventSource = null;
+function subscribeEvents() {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`${GATEWAY_URL}/voice/events?sessionId=${MOCK_USER_ID}`);
+    eventSource.onmessage = (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'notification') {
+                log('🔔 收到异步后台任务通知');
+                appendChat(data.content, 'ai');
+            } else if (data.type === 'system') {
+                console.log('[System]', data.content);
+            }
+        } catch(err) {}
+    };
+}
+subscribeEvents();
+
 function appendChat(content, type = 'ai') {
     const msgDiv = document.createElement('div');
     msgDiv.className = `chat-msg ${type}`;
@@ -206,7 +225,7 @@ btnSend.addEventListener('click', async () => {
         const response = await fetch(`${GATEWAY_URL}/voice/text-chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text })
+            body: JSON.stringify({ message: text, sessionId: MOCK_USER_ID })
         });
 
         const reader = response.body.getReader();

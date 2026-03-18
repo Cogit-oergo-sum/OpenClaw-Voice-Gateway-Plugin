@@ -3,6 +3,7 @@ import { FluidVoiceCore } from './components/FluidVoiceCore';
 import { GlassWidget } from './components/GlassWidget';
 import { SubtitleStream } from './components/SubtitleStream';
 import { TerminalEnding } from './components/TerminalEnding';
+import { TextChatPanel } from './components/TextChatPanel';
 import { useAgent } from './hooks/useAgent';
 
 function App() {
@@ -14,9 +15,12 @@ function App() {
     hookText,
     pulseTrigger,
     isConnected,
+    agentVersion,
+    setAgentVersion,
     startCall,
     endCall,
-    sendTestTTS
+    sendTestTTS,
+    sendTextMessage
   } = useAgent();
 
   return (
@@ -37,6 +41,14 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* Text Chat Panel (Always accessible) */}
+      <TextChatPanel 
+        messages={messages} 
+        onSendMessage={sendTextMessage}
+        agentVersion={agentVersion}
+        onVersionChange={setAgentVersion}
+      />
 
       {/* Interaction Stage: Subtitles */}
       <SubtitleStream messages={messages} />

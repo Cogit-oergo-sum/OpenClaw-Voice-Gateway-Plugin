@@ -1,0 +1,1 @@
+{"timestamp":1773731248195,"patch":{"mode":"session_start","metadata":{"text_input":"帮我重构一下 src/agent 下的所有逻辑，提升并发稳定性。"}},"callId":"v2_test_1773731248195"}

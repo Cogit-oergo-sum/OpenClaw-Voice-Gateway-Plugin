@@ -11,6 +11,13 @@ import * as path from 'path';
 const app = express();
 app.use(bodyParser.json());
 
+app.use((req, res, next) => {
+    console.log(`[HTTP] ${req.method} ${req.url}`);
+    next();
+});
+
+console.log(`[MockHost] Using OPENCLAW_WORKSPACE: ${process.env.OPENCLAW_WORKSPACE}`);
+
 // 模拟 OpenClaw 的 PluginAPI 接口
 const mockApi = {
     registerHttpRoute: (options: { path: string; handler: (req: Request, res: Response) => void | Promise<void> }) => {
@@ -65,7 +72,7 @@ app.use(express.static(path.join(__dirname, '../web_vanilla')));
 console.log('[MockHost] Starting VoiceGateway Plugin in Simulation Mode...');
 register(mockApi as any, mockConfig as any);
 
-const PORT = 18789;
+const PORT = 18790;
 app.listen(PORT, () => {
     console.log(`
 🚀 OpenClaw Plugin Mock Host started!

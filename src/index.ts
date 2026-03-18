@@ -3,13 +3,23 @@ import { startCallHandler, endCallHandler, statusHandler, refreshTokenHandler } 
 import { chatCompletionsHandler } from './http/chat-api';
 import type { PluginConfig } from './types/config';
 import { readWorkspaceFile, writeWorkspaceJson, resolveWorkspacePath } from './context/loader';
-import { FastAgent } from './agent/fast-agent';
+import { FastAgentFactory } from './agent/factory';
+import { IFastAgent } from './agent/types';
 import { mockCallbackHandler } from './http/mock-webhook';
 import { callContextStorage } from './context/ctx';
 import * as dotenv from 'dotenv';
+import { EventEmitter } from 'events';
 
-// 加载 .env
-dotenv.config();
+// 加载 .env (显式指定路径，确保作为 OpenClaw 插件加载时也能找到)
+import * as path from 'path';
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+// 全局通知总线，用于模拟环境的异步通知推送
+const notificationBus = new EventEmitter();
+notificationBus.setMaxListeners(100);
+
+// [V1.9.0] 记录活跃的仿真会话 (SSE)，用于无目标播报时的广播fallback
+const activeSimSessions = new Set<string>();
 
 // 模拟 OpenClaw 的 PluginAPI 接口类型
 interface PluginAPI {
@@ -22,60 +32,35 @@ interface PluginAPI {
  * OpenClaw Plugin 入口函数 
  * (OpenClaw 加载插件后会自动调用 register() )
  */
-export function register(api: PluginAPI, config: PluginConfig) {
+export function register(api: PluginAPI, config: PluginConfig = {} as any) {
     console.log('[VoiceGateway] Registering Plugin with Config:', config);
 
     // 1. 初始化通话状态机和 ZEGO API Client
-    const workspaceRoot = resolveWorkspacePath(config.advanced?.httpAuthToken === 'none' ? './demo_workspace' : undefined);
-    const callManager = new CallManager(config);
+    const workspaceRoot = resolveWorkspacePath(config?.advanced?.httpAuthToken === 'none' ? './demo_workspace' : undefined);
+    const callManager = new CallManager(config || {} as any);
 
-    // 初始化 FastAgent (注入环境变量中的真实 Key)
-    const fastAgent = new FastAgent({
-        ...config,
+    // 初始化 FastAgent (注入环境变量中的专属 Fast Agent 配置，独立于 OpenClaw)
+    const fastAgent: IFastAgent = FastAgentFactory.create({
+        ...(config || {}),
         llm: {
-            ...config.llm,
-            apiKey: process.env.BAILIAN_API_KEY || config.llm.apiKey,
-            baseUrl: process.env.BAILIAN_BASE_URL || config.llm.baseUrl,
-            model: process.env.BAILIAN_MODEL || config.llm.model
+            ...(config?.llm || {}),
+            apiKey: process.env.FAST_AGENT_API_KEY || process.env.BAILIAN_API_KEY || config?.llm?.apiKey,
+            baseUrl: process.env.FAST_AGENT_BASE_URL || process.env.BAILIAN_BASE_URL || config?.llm?.baseUrl,
+            model: process.env.FAST_AGENT_MODEL || process.env.BAILIAN_MODEL || config?.llm?.model
+        },
+        fastAgent: {
+            version: process.env.FAST_AGENT_VERSION || config?.fastAgent?.version || 'v2',
+            slcModel: process.env.FAST_AGENT_SLC_MODEL || 'qwen-turbo',
+            sleModel: process.env.FAST_AGENT_SLE_MODEL || process.env.FAST_AGENT_MODEL || 'qwen-plus',
+            slcBaseUrl: config?.fastAgent?.slcBaseUrl,
+            sleBaseUrl: config?.fastAgent?.sleBaseUrl
         }
     }, workspaceRoot);
 
     // 🚀 安全扫雷机制 (Reboot GC)：防止宿主奔溃和发版残留导致漏费
-    // setTimeout 延迟 5 秒执行，绝不阻碍 OpenClaw 主 Agent 的启动引导流程
-    setTimeout(async () => {
+    // 🚀 安全扫雷机制 (Reboot GC)
+    (async () => {
         try {
-            const rawData = await readWorkspaceFile(callManager.workspaceRoot, 'call_states.json');
-            if (!rawData) return;
-
-            let data: any = {};
-            try {
-                data = JSON.parse(rawData);
-            } catch (e) {
-                console.error('[VoiceGateway] Invalid call_states.json syntax, ignoring GC.', e);
-                return;
-            }
-
-            if (data.instances && Array.isArray(data.instances) && data.instances.length > 0) {
-                console.warn(`[VoiceGateway] ⚠️ DETECTED ${data.instances.length} GHOST INSTANCES from previous run. Sweeping safely...`);
-
-                // 并发节流控制：每次最多并发清理 5 个，防止把 ZEGO API 打挂或被封禁
-                const batchSize = 5;
-                for (let i = 0; i < data.instances.length; i += batchSize) {
-                    const batch = data.instances.slice(i, i + batchSize);
-                    await Promise.allSettled(batch.map(async (agentId: string) => {
-                        try {
-                            await callManager.api.deleteAgentInstance(agentId);
-                            console.log(`[VoiceGateway] Swept ghost instance: ${agentId}`);
-                        } catch (e: any) {
-                            console.error(`[VoiceGateway] Failed to sweep ${agentId}: ${e.message}`);
-                        }
-                    }));
-                }
-            }
-            // 完全清空状态文件
-            await writeWorkspaceJson(callManager.workspaceRoot, 'call_states.json', { instances: [] });
-            console.log('[VoiceGateway] Reboot GC finished successfully.');
-
             // 🌟 动态写入 SKILL.md 到工作区，最高优先级暴露给主 Agent
             const skillContent = `---
 name: voice-integration
@@ -84,84 +69,111 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
 
 # 语音通话接管能力 (Voice Integration Skill)
 
-当用户通过语音门户触发了一项复杂的后台耗时任务（如："帮我给张三发个邮件"）时，网关代理会把这个任务委托(delegate)给本意图，并且用户当前仍在电话线上等待。
-
-由于生成或执行报告可能需要好几秒甚至几十秒，这期间不能让电话那头的人干等着。你需要使用本技能提供的能力来管理通话体验。
+当用户通过语音门户触发了一项复杂的后台耗时任务（如："帮我给张三发个邮件"）时，网关代理会把这个任务委托(delegate)给本意图。
 
 ## 关键工具
-1. \`voice_speak\`: 主动向还在电话线上的用户语音播报进展或完成状态。
-2. \`voice_status\`: 查询当前是否有活跃电话，以及对应的 userId。
+1. \`voice_speak\`: 主动播报进展或结果（支持 text, delay, userId, strategy）。
+2. \`voice_status\`: 查询是否有活跃通话。
 
-## 执行规范
-1. **立即安抚**: 收到长委托时，如果觉得耗时，可以立刻调用 \`voice_speak\` 播报："我正在为您执行任务，请稍候。"。
-2. **结果触达**: 任务完成后，**必须**：
-   - 将文字版的执行结果写入 Memory 日志（供日后文本回顾）。
-   - **同时极度关键**：调用 \`voice_speak\` 主动用语音告诉用户："您的任务我已经处理完毕了，结果是..."。
-3. 如果 \`voice_status\` 显示没有活跃电话了，就只写 Memory，不用说话。
+## 场景规范
+1. **耗时任务（长任务）**:
+   - 收到任务后，立刻调用 \`voice_speak\` 说："正在处理，请稍候。"。
+   - 任务完成后，**必须**调用 \`voice_speak\` 播报结果。
+2. **异步提醒/闹钟 (优先方式)**:
+   - 如果用户说 "30秒后提醒我"，你应该直接调用 \`voice_speak\` 并设置 \`delay: 30\`。
+   - 示例：\`voice_speak({ text: "您要的30秒提醒到了", delay: 30 })\`。
+   - 这种方式最稳定，由网关插件在持久化进程中维护倒计时。
+3. **状态检查**: 任务结束后或时间到达，如果 \`voice_status\` 显示用户不在通话中，\`voice_speak\` 会尝试发送文本通知（仿真模式下也能收到）。
 `;
-
+            
             const pFs = require('fs/promises');
             const pPath = require('path');
-            const skillsDir = pPath.join(callManager.workspaceRoot, 'skills');
+            const skillsDir = pPath.join(workspaceRoot, 'skills');
             const skillFile = pPath.join(skillsDir, 'voice-gateway.md');
             await pFs.mkdir(skillsDir, { recursive: true });
+            
+            const finalContent = `<!-- Auto-generated by ZEGO Voice Gateway, do not edit manually unless allowSkillOverride is disabled -->\n${skillContent}`;
+            await pFs.writeFile(skillFile, finalContent, 'utf-8');
+            console.log(`[VoiceGateway] Injected SKILL documentation to: ${skillFile}`);
 
-            let fileExists = false;
-            try {
-                await pFs.access(skillFile);
-                fileExists = true;
-            } catch (err) { }
-
-            const allowOverride = config.advanced?.allowSkillOverride !== false;
-
-            if (fileExists && !allowOverride) {
-                console.warn('[VoiceGateway] [WARN] 检测到现存的 voice-gateway.md，跳过覆盖以保护自定义配置。');
-            } else {
-                const finalContent = `<!-- Auto-generated by ZEGO Voice Gateway, do not edit manually unless allowSkillOverride is disabled -->\n${skillContent}`;
-                await pFs.writeFile(skillFile, finalContent, 'utf-8');
-                console.log('[VoiceGateway] Injected SKILL documentation to workspace skills directory.');
+            const rawData = await readWorkspaceFile(workspaceRoot, 'call_states.json');
+            if (rawData) {
+                let data = JSON.parse(rawData);
+                if (data.instances && Array.isArray(data.instances) && data.instances.length > 0) {
+                    console.warn(`[VoiceGateway] ⚠️ DETECTED ${data.instances.length} GHOST INSTANCES. Sweeping...`);
+                    for (const agentId of data.instances) {
+                        try { await callManager.api.deleteAgentInstance(agentId); } catch(e) {}
+                    }
+                }
+                await writeWorkspaceJson(workspaceRoot, 'call_states.json', { instances: [] });
             }
-
         } catch (error) {
-            // 最外层严防死守，绝不会因为未捕获异常导致 OpenClaw 主进程奔溃
-            console.error('[VoiceGateway] Fatal ERROR during Reboot GC:', error);
+            console.error('[VoiceGateway] Startup task failed:', error);
         }
-    }, 5000);
+    })();
 
     // 一次性调用 ZEGO 模板注册接口，将咱们提供的 http endpoint 备案给 ZEGO 云
     // Phase 1 MVP 假定本机调试地址为内网穿透或者本机的 openclaw web port 18789
-    // 在真实环境应从 config 或 ctx 中取
-    const myLlmUrl = `https://wcmsx-185-220-238-40.a.free.pinggy.link/chat/completions`;
+    // 如果设置了 PUBLIC_URL 环境变量，则优先使用，否则 fallback 到之前的硬编码进行占位
+    const publicBase = process.env.PUBLIC_URL || 'https://wcmsx-185-220-238-40.a.free.pinggy.link';
+    const myLlmUrl = `${publicBase}/voice-gateway/chat/completions`;
+
+    console.log(`[VoiceGateway] Registering Agent with Callback URL: ${myLlmUrl}`);
 
     // 初始化注册逻辑 (不 block 启动过程)
     const agentParams = {
         llmUrl: myLlmUrl,
-        llm: config.llm,
-        tts: config.tts,
-        asr: config.asr
+        llm: {
+            apiKey: process.env.BAILIAN_API_KEY || config?.llm?.apiKey || '',
+            model: process.env.BAILIAN_MODEL || config?.llm?.model || 'qwen3.5-plus',
+            baseUrl: process.env.BAILIAN_BASE_URL || config?.llm?.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        },
+        tts: {
+            vendor: config?.tts?.vendor || 'ByteDance',
+            appId: config?.tts?.appId || 'zego_test',
+            token: config?.tts?.token || 'zego_test',
+            voiceType: config?.tts?.voiceType || 'zh_female_wanwanxiaohe_moon_bigtts'
+        },
+        asr: config?.asr
     };
 
-    callManager.api.registerAgent(agentParams).catch(async (err: any) => {
-        if (err.message?.includes('410001008')) {
-            console.log('[VoiceGateway] Agent already exists, updating configuration instead...');
-            try {
-                await callManager.api.updateAgent(agentParams);
-                console.log('[VoiceGateway] Agent configuration updated successfully.');
-            } catch (updateErr: any) {
-                console.error('[VoiceGateway] Failed to update existing agent:', updateErr.message);
+    if (agentParams.llm.apiKey) {
+        callManager.api.registerAgent(agentParams as any).catch(async (err: any) => {
+            if (err.message?.includes('410001008')) {
+                console.log('[VoiceGateway] Agent already exists, updating configuration instead...');
+                try {
+                    await callManager.api.updateAgent(agentParams as any);
+                    console.log('[VoiceGateway] Agent configuration updated successfully.');
+                } catch (updateErr: any) {
+                    console.error('[VoiceGateway] Failed to update existing agent:', updateErr.message);
+                }
+            } else {
+                console.error('[VoiceGateway] Failed to register agent on startup:', err.message);
             }
-        } else {
-            console.error('[VoiceGateway] Failed to register agent on startup:', err.message);
-        }
-    });
+        });
+    } else {
+        console.warn('[VoiceGateway] Skipping agent registration: Missing LLM API Key.');
+    }
 
-    // 2. 注册大模型的拦截 Endpoint
     api.registerHttpRoute({
-        path: '/chat/completions',
-        auth: config.advanced?.httpAuthToken || 'none', // 生产应设为 token 避免盗刷
+        path: '/voice-gateway/chat/completions',
+        auth: 'none', // 暂时设为 none 以确保测试阶段 ZEGO 回调能通过
         handler: async (req: any, res: any) => {
             const instanceId = req.body?.agent_info?.agent_instance_id || 'unknown';
-            await callContextStorage.run({ callId: instanceId, userId: req.body?.agent_info?.user_id || 'unknown', startTime: Date.now(), metadata: {} }, async () => {
+            console.log(`[VoiceGateway] [Incoming] SSE Request for Instance: ${instanceId}`);
+            console.log(`[VoiceGateway] [Debug] Raw Body: ${JSON.stringify(req.body)}`);
+            console.log(`[VoiceGateway] [Debug] Headers: ${JSON.stringify(req.headers)}`);
+
+            if (!req.body || !req.body.messages) {
+                console.error(`[VoiceGateway] [Error] Missing body or messages array! Full Body:`, req.body);
+            }
+
+            await callContextStorage.run({ 
+                callId: instanceId, 
+                userId: req.body?.agent_info?.user_id || 'unknown', 
+                startTime: Date.now(), 
+                metadata: {} 
+            }, async () => {
                 await chatCompletionsHandler(callManager, config, fastAgent)(req, res);
             });
         }
@@ -193,24 +205,120 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
     });
 
     // 🚀 [New] 文本对话互动接口 (Fast Agent Text MVP)
+    const textChatHistories = new Map<string, any[]>();
     api.registerHttpRoute({
         path: '/voice/text-chat',
         auth: config.advanced?.httpAuthToken || 'none',
         handler: async (req: any, res: any) => {
-            const { message } = req.body;
-            const callId = `text-chat-${Date.now()}`;
+            const { message, sessionId, version: requestVersion } = req.body;
+            const callId = sessionId || `text-chat-${Date.now()}`;
             
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
             res.setHeader('Connection', 'keep-alive');
 
+            const history = textChatHistories.get(callId) || [];
+            const currentMessages = [...history, { role: 'user', content: message }];
+
+            // 动态选择版本
+            let currentAgent = fastAgent;
+            if (requestVersion && requestVersion !== (config.fastAgent?.version || 'v2')) {
+                console.log(`[TextChat] Dynamically switching to version: ${requestVersion}`);
+                currentAgent = FastAgentFactory.create({
+                    ...config,
+                    fastAgent: { ...config.fastAgent, version: requestVersion }
+                }, workspaceRoot);
+            }
+
             await callContextStorage.run({ callId, userId: 'tester', startTime: Date.now(), metadata: {} }, async () => {
-                await fastAgent.process(message, (chunk) => {
+                let fullReply = "";
+                await currentAgent.process(currentMessages, (chunk: any) => {
+                    if (chunk.type === 'text' || chunk.type === 'filler') {
+                        fullReply += chunk.content;
+                    }
                     res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                }, async (notifyText: string) => {
+                    // 对于模拟器，将后台异步通知通过总线推送，并记录到历史中
+                    console.log(`[TextChat][Notification] ${callId}: ${notifyText}`);
+                    
+                    const hist = textChatHistories.get(callId) || [];
+                    hist.push({ role: 'assistant', content: notifyText });
+                    textChatHistories.set(callId, hist);
+
+                    // 核心：推送到通知总线
+                    notificationBus.emit('notify', { sessionId: callId, text: notifyText });
                 });
+                
+                // 更新历史
+                history.push({ role: 'user', content: message });
+                history.push({ role: 'assistant', content: fullReply });
+                textChatHistories.set(callId, history.slice(-20)); // 保留最近 20 条
             });
             res.write('data: [DONE]\n\n');
             res.end();
+            
+            // 如果是临时创建的实例，需要销毁以释放定时器
+            if (currentAgent !== fastAgent) {
+                currentAgent.destroy();
+            }
+        }
+    });
+
+    // 🚀 [New] 仿真背景消息总线 (用于测试面板异步接收任务结果)
+    api.registerHttpRoute({
+        path: '/voice/internal/notify',
+        match: 'POST',
+        handler: async (req, res) => {
+            const { sessionId, text } = req.body;
+            console.log(`[Internal Notify] Received: "${text}" for session: ${sessionId || 'broadcast'}`);
+            
+            if (sessionId) {
+                notificationBus.emit('notify', { sessionId, text });
+            } else {
+                // 如果没有指定 ID，向所有仿真会话广播
+                for (const simId of activeSimSessions) {
+                    notificationBus.emit('notify', { sessionId: simId, text });
+                }
+            }
+            res.json({ success: true });
+        }
+    });
+
+    api.registerHttpRoute({
+        path: '/voice/events',
+        auth: 'none',
+        handler: async (req: any, res: any) => {
+            const { sessionId } = req.query;
+            if (!sessionId) return res.status(400).send('Missing sessionId');
+
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+
+            activeSimSessions.add(sessionId);
+
+            // 每 15 秒发送一个心跳，防止连接断开
+            const heartbeat = setInterval(() => {
+                res.write(`: heartbeat\n\n`);
+            }, 15000);
+
+            const onNotify = (data: any) => {
+                if (data.sessionId === sessionId) {
+                    res.write(`data: ${JSON.stringify({ type: 'notification', content: data.text })}\n\n`);
+                }
+            };
+
+            notificationBus.on('notify', onNotify);
+
+            req.on('close', () => {
+                clearInterval(heartbeat);
+                notificationBus.off('notify', onNotify);
+                activeSimSessions.delete(sessionId);
+            });
+
+            // 发送一个初始连接成功信号
+            res.write(`data: ${JSON.stringify({ type: 'system', content: 'Event bus connected' })}\n\n`);
         }
     });
 
@@ -232,26 +340,111 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
         parameters: Type.Object({
             userId: Type.String({ description: '要通知的用户 ID。如果不知道可以留空，将尝试向最近活跃的通话广播。' }),
             text: Type.String({ description: '要语音播报的文本，尽量简短口语化，不要超过 300 字。' }),
+            delay: Type.Optional(Type.Number({ description: '延迟播报的秒数。例如 5 表示 5 秒后播报。适用于异步提醒。' })),
             priority: Type.Optional(Type.Union([Type.Literal('High'), Type.Literal('Medium'), Type.Literal('Low')])),
             strategy: Type.Optional(Type.Union([Type.Literal('interrupt'), Type.Literal('queue')], { description: 'interrupt 适用于紧急通知（如“系统错误，即将挂断”）。queue 适用于异步任务完成后的提醒（如“您刚才让我查的天气已经有了”）' }))
         }),
         execute: async (executionId: string, params: any) => {
-            const tgtUserId = params.userId || Array.from(callManager['activeCalls'].keys())[0];
-            if (!tgtUserId) {
-                return { success: false, error: '当前没有活跃的首选语音通话' };
-            }
+            console.log(`[voice_speak] [EXEC] ID: ${executionId} | Text: "${params.text}" | Delay: ${params.delay || 0}s | Target: ${params.userId || 'any'}`);
+            
+            const doSpeak = async () => {
+                // 原有的 speak 逻辑封装在这里
+                console.log(`[voice_speak] [DO_SPEAK] Text: "${params.text}"`);
+            
+            // 优先级：参数指定ID > RTC活跃通话ID > 仿真会话ID
+            const tgtUserId = params.userId 
+                || Array.from(callManager['activeCalls'].keys())[0]
+                || Array.from(activeSimSessions.keys())[0];
 
-            const activeInstanceId = callManager.getActiveInstanceId(tgtUserId);
+            console.log(`[voice_speak] Resolved target user ID: ${tgtUserId}`);
+
+            const activeInstanceId = tgtUserId ? callManager.getActiveInstanceId(tgtUserId) : null;
+
+            // [仿真支持] 如果没有找到活跃的 RTC 通话，尝试推送到仿真总线 (SSE)
             if (!activeInstanceId) {
-                return { success: false, error: `用户 ${tgtUserId} 当前没有活跃的语音连接` };
+                console.log(`[voice_speak] No active RTC call found for ${tgtUserId}, checking simulation bus... (Sessions: ${Array.from(activeSimSessions).join(', ')})`);
+                if (tgtUserId && activeSimSessions.has(tgtUserId)) {
+                    console.log(`[voice_speak] 🚀 Emitting to simulation bus for session: ${tgtUserId}`);
+                    notificationBus.emit('notify', { sessionId: tgtUserId, text: params.text });
+                    return { success: true, message: `已推送到仿真终端 (Simulation Mode)。` };
+                }
+                
+                // Final fallback: if we have any sim sessions but IDs don't match or were lost, broadcast to all
+                if (activeSimSessions.size > 0) {
+                    const firstSimId = Array.from(activeSimSessions)[0];
+                    console.log(`[voice_speak] 🚀 Broadcasting to first available simulation session: ${firstSimId}`);
+                    notificationBus.emit('notify', { sessionId: firstSimId, text: params.text });
+                    return { success: true, message: `已广播到仿真终端。` };
+                }
+
+                // [CLI 转发机制] 如果本地没有找到任何会话，说明可能是在独立的 CLI 进程中运行
+                // 尝试向本地 Gateway 的内部端口发送通知，让持久化的 Gateway 进程来转发
+                try {
+                    console.log('[voice_speak] 🔗 CLI Forwarding: No local sessions, trying Gateway ports...');
+                    const ports = [18791, 18790];
+                    const paths = ['/voice-gateway/voice/internal/notify', '/voice/internal/notify'];
+                    const http = require('http');
+                    const postData = JSON.stringify({ sessionId: tgtUserId, text: params.text });
+
+                    for (const port of ports) {
+                        for (const path of paths) {
+                            try {
+                                const options = {
+                                    hostname: '127.0.0.1',
+                                    port: port,
+                                    path: path, 
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Content-Length': Buffer.byteLength(postData)
+                                    },
+                                    timeout: 500
+                                };
+
+                                const req = http.request(options, (res: any) => {
+                                    console.log(`[voice_speak] 🔗 Forwarded to ${port}${path} | Status: ${res.statusCode}`);
+                                    if (res.statusCode === 200) {
+                                        console.log(`[voice_speak] ✅ Successfully delivered to ${port}${path}`);
+                                    }
+                                });
+                                req.on('error', (err: any) => {
+                                    console.log(`[voice_speak] ❌ Failed to forward to ${port}${path}: ${err.message}`);
+                                });
+                                req.write(postData);
+                                req.end();
+                            } catch (e) {}
+                        }
+                    }
+                    
+                    return { success: true, message: `通知已尝试转发至网关服务。` };
+                } catch (e: any) {
+                    console.error('[voice_speak] CLI Forwarding fatal error:', e.message);
+                }
+
+                return { success: false, error: '当前没有活跃的语音通话或仿真会话。' };
             }
 
-            try {
-                const zegoStrategy = params.strategy === 'queue' ? 'Enqueue' : 'ClearAndInterrupt';
-                await callManager.api.sendAgentInstanceTTS(activeInstanceId, params.text, params.priority || 'Medium', zegoStrategy);
-                return { success: true, message: `已成功向用户发送语音播报。` };
-            } catch (err: any) {
-                return { success: false, error: `语音播报发送失败: ${err.message}` };
+                try {
+                    const zegoStrategy = params.strategy === 'queue' ? 'Enqueue' : 'ClearAndInterrupt';
+                    // 1. 发送语音
+                    await callManager.api.sendAgentInstanceTTS(activeInstanceId, params.text, params.priority || 'Medium', zegoStrategy);
+                    // 2. [V1.9.0] 发送文本/字幕内容，确保客户端音画同步
+                    await callManager.api.addAgentInstanceMsg(activeInstanceId, 'assistant', params.text);
+                    // 3. 同时推送到仿真总线 (用于双端监控)
+                    notificationBus.emit('notify', { sessionId: tgtUserId, text: params.text });
+                    
+                    return { success: true, message: `已成功向用户发送语音播报。` };
+                } catch (err: any) {
+                    return { success: false, error: `语音播报发送失败: ${err.message}` };
+                }
+            };
+
+            if (params.delay && params.delay > 0) {
+                console.log(`[voice_speak] Scheduling deferred talk in ${params.delay}s...`);
+                setTimeout(doSpeak, params.delay * 1000);
+                return { success: true, message: `已成功预约在 ${params.delay} 秒后提醒。` };
+            } else {
+                return await doSpeak();
             }
         }
     });

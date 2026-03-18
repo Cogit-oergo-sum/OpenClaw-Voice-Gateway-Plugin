@@ -55,15 +55,29 @@ export class ShadowManager {
         const callId = getCurrentCallId() || 'global';
         const state = this.getScopedState();
         
-        const agentMd = await readWorkspaceFile(this.workspaceRoot, 'agent.md') || '';
+        const soulMd = await readWorkspaceFile(this.workspaceRoot, 'soul.md') || '';
         const userMd = await readWorkspaceFile(this.workspaceRoot, 'user.md') || '';
+        const agentsMd = await readWorkspaceFile(this.workspaceRoot, 'AGENTS.md') || '';
+        const identityMd = await readWorkspaceFile(this.workspaceRoot, 'IDENTITY.md') || '';
+        const memoryMd = await readWorkspaceFile(this.workspaceRoot, 'memory.md') || '';
+
+        // [V1.9.0] 提取最近 5 轮对话作为短期记忆增强
+        const recentHistory = await this.getRecentDialogueContextRaw(5);
         
         return `
-[人设指令 (Agent Persona)]
-${agentMd}
+[人设与指南 (Persona & Agents Guidelines)]
+${soulMd}
+${agentsMd}
+${identityMd}
 
 [用户画像 (User Profile)]
 ${userMd}
+
+[核心长期记忆 (Long-term Memory)]
+${memoryMd}
+
+[短期会话记录 (Recent Conversation)]
+${recentHistory || '暂无历史记录'}
 
 [当前影子状态 (Shadow State - ${callId})]
 模式: ${state.mode}
@@ -72,6 +86,46 @@ ${userMd}
 元数据: ${JSON.stringify(state.metadata)}
 最后更新: ${new Date(state.lastUpdated).toLocaleString()}
 `;
+    }
+
+    /**
+     * [V2.1.0] 获取极简人设，供 SLC 快速起跑使用
+     */
+    async getCompactPersona(): Promise<string> {
+        const userMd = await readWorkspaceFile(this.workspaceRoot, 'user.md') || '';
+        const soulMd = await readWorkspaceFile(this.workspaceRoot, 'soul.md') || '';
+        
+        const userNameMatch = userMd.match(/用户名叫\s*(\S+)/) || userMd.match(/名字是\s*(\S+)/);
+        const agentNameMatch = soulMd.match(/你是\s*(\S+)/);
+        
+        const userName = userNameMatch ? userNameMatch[1].replace(/[。，]/g, '') : '先生';
+        const agentName = agentNameMatch ? agentNameMatch[1].replace(/[。，]/g, '') : 'Jarvis';
+        
+        return `你是 ${agentName}。用户是 ${userName}。风格: 优雅管家。`;
+    }
+
+    /**
+     * [V1.9.0] 获取原始对话流，不带信封包装
+     */
+    private async getRecentDialogueContextRaw(limit: number = 5): Promise<string> {
+        try {
+            const date = new Date().toISOString().split('T')[0];
+            const logFile = path.join(this.workspaceRoot, `memory/${date}.jsonl`);
+            if (!fs.existsSync(logFile)) return "";
+
+            const content = await fs.promises.readFile(logFile, 'utf8');
+            const lines = content.trim().split('\n');
+            const sessionLines = lines
+                .map(l => {
+                    try { return JSON.parse(l); } catch(e) { return null; }
+                })
+                .filter(l => l && l.callId === getCurrentCallId())
+                .slice(-limit);
+
+            return sessionLines.map(l => `${l.role === 'user' ? '用户' : '助理'}: ${l.content}`).join('\n');
+        } catch (e) {
+            return "";
+        }
     }
 
     /**
@@ -155,6 +209,55 @@ ${userMd}
             } catch (e) {
                 console.warn(`[Recovery] Failed to parse WAL line for ${callId}`);
             }
+        }
+    }
+
+    /**
+     * 将对话记录持久化到 memory/ 目录，供 OpenClaw 主 Agent 感知
+     */
+    async logDialogue(callId: string, role: 'user' | 'assistant', content: string) {
+        const date = new Date().toISOString().split('T')[0];
+        const logDir = path.join(this.workspaceRoot, 'memory');
+        const logFile = `memory/${date}.jsonl`;
+        
+        if (!fs.existsSync(logDir)) {
+            await fs.promises.mkdir(logDir, { recursive: true });
+        }
+
+        const entry = {
+            timestamp: new Date().toISOString(),
+            callId,
+            role,
+            content
+        };
+        await appendWorkspaceFile(this.workspaceRoot, logFile, JSON.stringify(entry) + '\n');
+    }
+
+    /**
+     * [V1.9.0] 获取最近的对话背景摘要，用于注入到 CLI 调用中
+     */
+    async getRecentDialogueContext(limit: number = 3): Promise<string> {
+        try {
+            const date = new Date().toISOString().split('T')[0];
+            const logFile = path.join(this.workspaceRoot, `memory/${date}.jsonl`);
+            if (!fs.existsSync(logFile)) return "";
+
+            const content = await fs.promises.readFile(logFile, 'utf8');
+            const lines = content.trim().split('\n');
+            const sessionLines = lines
+                .map(l => {
+                    try { return JSON.parse(l); } catch(e) { return null; }
+                })
+                .filter(l => l && l.callId === getCurrentCallId())
+                .slice(-limit);
+
+            const summary = sessionLines.map(l => `${l.role === 'user' ? '用户' : '助手'}: ${l.content}`).join(' | ');
+            const state = this.getScopedState();
+            
+            return `[上下文记忆: ${summary}][当前状态: ${state.mode}${state.task_id ? `, 任务ID: ${state.task_id}` : ''}] `;
+        } catch (e) {
+            console.error('[ShadowManager] Failed to get recent context:', e);
+            return "";
         }
     }
 }

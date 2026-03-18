@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { ZegoExpressEngine } from 'zego-express-engine-webrtc';
 import type { AgentState } from '../components/FluidVoiceCore';
 import type { Message } from '../components/SubtitleStream';
@@ -220,6 +220,114 @@ export function useAgent() {
     }
   };
 
+  const [agentVersion, setAgentVersion] = useState<'v2' | 'v3'>('v2');
+  const textChatSessionId = useRef<string>(`text-chat-${Date.now()}`);
+
+  // Proactive Notifications (SSE)
+  useEffect(() => {
+    const sessionId = textChatSessionId.current;
+    log(`Connecting to event stream for session: ${sessionId}`);
+    
+    const eventSource = new EventSource(`${GATEWAY_URL}/voice/events?sessionId=${sessionId}`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'notification' && data.content) {
+          log(`Received notification: ${data.content}`);
+          setMessages(prev => [
+            ...prev, 
+            { 
+              id: 'notify-' + Date.now(), 
+              role: 'agent', 
+              text: data.content, 
+              isTyping: false 
+            }
+          ]);
+          triggerPulse();
+        }
+      } catch (e) {
+        // Heartbeat or system messages skip
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('EventSource failed:', err);
+      // Optional: retry logic
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [triggerPulse]);
+
+  const sendTextMessage = async (text: string) => {
+    log(`Sending text message: ${text} (Version: ${agentVersion}, Session: ${textChatSessionId.current})`);
+    
+    // Add user message to UI
+    const userMsgId = Date.now().toString();
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', text, isTyping: false }]);
+
+    try {
+      const res = await fetch(`${GATEWAY_URL}/voice/text-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'test-token-12345'
+        },
+        body: JSON.stringify({ 
+          message: text, 
+          version: agentVersion,
+          sessionId: textChatSessionId.current
+        })
+      });
+
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let agentMsgId = (Date.now() + 1).toString();
+      let fullText = "";
+
+      if (reader) {
+        setMessages(prev => [...prev, { id: agentMsgId, role: 'agent', text: '', isTyping: true }]);
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.replace('data: ', '').trim();
+              if (dataStr === '[DONE]') continue;
+              
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.type === 'text' || data.type === 'filler') {
+                  fullText += data.content;
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const idx = updated.findIndex(m => m.id === agentMsgId);
+                    if (idx !== -1) {
+                      updated[idx] = { ...updated[idx], text: fullText, isTyping: !data.isFinal };
+                    }
+                    return updated;
+                  });
+                  if (data.type === 'text') triggerPulse();
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      log('Text chat failed: ' + e.message);
+    }
+  };
+
   return {
     state,
     messages,
@@ -228,8 +336,11 @@ export function useAgent() {
     hookText,
     pulseTrigger,
     isConnected,
+    agentVersion,
+    setAgentVersion,
     startCall,
     endCall,
-    sendTestTTS
+    sendTestTTS,
+    sendTextMessage
   };
 }

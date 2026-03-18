@@ -4,9 +4,9 @@
   "description": "OpenClaw 语音通话网关插件",
   "main": "dist/index.js",
   "openclaw": {
-    "extensions": {
-      "voice-gateway": "./dist/index.js"
-    }
+    "extensions": [
+      "dist/index.js"
+    ]
   },
   "scripts": {
     "build": "tsc",
@@ -21,10 +21,12 @@
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.6",
+    "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.6",
     "@types/node": "^20.11.20",
     "body-parser": "^2.2.2",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "ts-node": "^10.9.2",
