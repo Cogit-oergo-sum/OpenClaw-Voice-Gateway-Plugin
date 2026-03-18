@@ -43,6 +43,32 @@ export class FastAgentV3 implements IFastAgent {
     
     // Canvas 内存存储 (按会话隔离)
     private canvases: Map<string, CanvasState> = new Map();
+    private notifiers: Map<string, (text: string) => Promise<void>> = new Map();
+    private scanTimer: NodeJS.Timeout | null = null;
+    private logDir: string;
+    private instanceId: string = Math.random().toString(36).substring(7);
+    
+    /**
+     * [V3.1.6] Canvas 审计日志：记录状态机所有流转轨迹
+     */
+    private async logCanvasEvent(callId: string, event: string, detail: any) {
+        try {
+            if (!fs.existsSync(this.logDir)) fs.mkdirSync(this.logDir, { recursive: true });
+            const logPath = path.join(this.logDir, 'canvas.jsonl');
+            const entry = {
+                timestamp: new Date().toISOString(),
+                callId,
+                event,
+                detail,
+                state: this.canvases.get(callId)
+            };
+            await fs.promises.appendFile(logPath, JSON.stringify(entry) + '\n');
+            console.log(`[CanvasLog][${callId}] ${event}: ${JSON.stringify(detail)}`);
+        } catch (e) {
+            console.error('[CanvasLog] Failed to log event:', e);
+        }
+    }
+
 
     constructor(private config: PluginConfig, private workspaceRoot: string) {
         this.openai = new OpenAI({
@@ -55,15 +81,26 @@ export class FastAgentV3 implements IFastAgent {
             baseURL: config.fastAgent?.slcBaseUrl || config.llm.baseUrl
         });
         
+        this.logDir = path.join(workspaceRoot, 'logs');
         this.shadow = new ShadowManager(workspaceRoot);
         this.startKeepAlive();
+        this.startWatchdog(); 
         this.refreshCompactPersona(); 
+        console.log(`[FastAgentV3] Instance created for workspace: ${this.workspaceRoot}`);
     }
+
 
     private async refreshCompactPersona() {
         try {
             this.compactPersona = await this.shadow.getCompactPersona();
         } catch(e) {}
+    }
+
+    destroy() {
+        console.log(`[FastAgentV3] Instance destroying... flushing timers.`);
+        if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
+        if (this.scanTimer) clearInterval(this.scanTimer);
+        this.notifiers.clear();
     }
 
     private startKeepAlive() {
@@ -79,6 +116,63 @@ export class FastAgentV3 implements IFastAgent {
             } catch (e) {}
         }, 50000); 
     }
+
+    /**
+     * [V3.1.5] Watchdog Scanner: 每 500ms 扫描 Canvas 状态
+     * 遵循 fast_agent_v3.md 规范，主动触发 READY 状态的播报
+     * 特性：剥离原 SLE 内部抢跑通知，由心跳统一收口
+     */
+    private startWatchdog() {
+        if (this.scanTimer) clearInterval(this.scanTimer);
+        console.log(`[Watchdog] 🛡️ Started. Scanning interval: 1000ms`);
+        
+        let heartbeatCount = 0;
+
+        this.scanTimer = setInterval(async () => {
+            heartbeatCount++;
+            if (heartbeatCount % 10 === 0) { 
+                const details = Array.from(this.canvases.entries()).map(([id, c]) => 
+                    `${id}(${c.task_status.status},is_del=${c.task_status.is_delivered},notif=${!!this.notifiers.get(id)})`
+                ).join(', ');
+                console.log(`[Watchdog][${this.instanceId}] 💓 Heartbeat: ${this.canvases.size} canvases: [${details || 'none'}]`);
+            }
+
+            for (const [callId, canvas] of this.canvases.entries()) {
+                const status = canvas.task_status;
+                
+                // 仅扫描 READY 且未播报的单元
+                if (status.status === 'READY' && !status.is_delivered) {
+                    if (status.importance_score < 0.7) continue;
+
+                    // 🚀 [V3.1.9] 关键修复：立即标记投递中，防止并发心跳重复触发
+                    status.is_delivered = true; 
+
+                    const notifier = this.notifiers.get(callId);
+                    if (notifier) {
+                        console.log(`[Watchdog][${this.instanceId}] 📣 TRIGGERING for ${callId}: "${status.summary.substring(0, 30)}..."`);
+                        await this.logCanvasEvent(callId, 'WATCHDOG_TRIGGER', { summary: status.summary });
+                        
+                        try {
+                            const butlerMsg = await this.asButler(status.summary, "后台任务汇报");
+                            await notifier(butlerMsg);
+                            console.log(`[Watchdog][${this.instanceId}] ✅ Delivered to ${callId}`);
+                            await this.shadow.logDialogue(callId, 'assistant', butlerMsg);
+                            await this.logCanvasEvent(callId, 'WATCHDOG_DELIVERED', { butlerMsg });
+                        } catch (e) {
+                            console.error(`[Watchdog][${this.instanceId}] ❌ Delivery Failed for ${callId}:`, e);
+                            status.is_delivered = false; // 允许下次重试
+                        }
+                    } else {
+                        status.is_delivered = false; // 等待 notifier 就位后再触发
+                        if (heartbeatCount % 5 === 0) {
+                            console.warn(`[Watchdog][${this.instanceId}][${callId}] ⚠️ READY but NO NOTIFIER yet.`);
+                        }
+                    }
+                }
+            }
+        }, 1000);
+    }
+
 
     private getCanvas(callId: string): CanvasState {
         if (!this.canvases.has(callId)) {
@@ -97,6 +191,7 @@ export class FastAgentV3 implements IFastAgent {
                     interrupted: false
                 }
             });
+            this.logCanvasEvent(callId, 'CANVAS_INIT', {});
         }
         return this.canvases.get(callId)!;
     }
@@ -149,19 +244,23 @@ export class FastAgentV3 implements IFastAgent {
 要求：
 1. 极其简洁，直接说重点。
 2. 即使任务失败或超时，也要表现得非常有礼貌且在掌控之中。
-3. 严禁复读主脑汇报的原始日志。`;
+3. 严禁复读任何技术标签如 "[上下文记忆: ...]"、"(潜意识: ...)" 或主脑汇报的原始日志。`;
 
         try {
             const resp = await this.openai.chat.completions.create({
                 model: this.config.fastAgent?.sleModel || this.config.llm.model,
                 messages: [{ role: 'system', content: prompt }] as any,
+                temperature: 0.7,
                 max_tokens: 150
             });
-            return resp.choices[0]?.message?.content || "先生，办妥了。";
+            let reply = resp.choices[0]?.message?.content || "先生，办妥了。";
+            // 🚀 [V3.1.5] 最终防御：强制激进抹除可能的标签残留
+            return reply.replace(/[\(\[].*?[\)\]]/g, '').replace(/[\(\[].*$/g, '').trim();
         } catch (e) {
             return "先生，事情已经办妥了。";
         }
     }
+
 
     /**
      * SLE (Soul-Logic-Expert): 逻辑推演与画布生产
@@ -177,7 +276,10 @@ export class FastAgentV3 implements IFastAgent {
         notifier?: (text: string) => Promise<void>
     ): Promise<string> {
         const canvas = this.getCanvas(callId);
+        if (notifier) this.notifiers.set(callId, notifier);
+
         const sleModel = this.config.fastAgent?.sleModel || this.config.llm.model;
+
         let sleFullOutput = "";
 
         try {
@@ -195,7 +297,9 @@ ${fullSoul}
 - 不要解释，不要说“我这就去办”、“正在调用工具”之类的话，直接执行工具。
 - 严禁在输出中包含任何类似 \`[调用 delegate_openclaw]\` 或 JSON 格式的中间思考过程。你的回复应该只包含对用户有意义的自然语言。
 - 任务执行结果会自动由管家汇报，你只需要开启任务即可。
+- 你的回复如果需要提及背景信息，请保持管家风范，严禁复读 "[上下文记忆: ...]" 或 "(潜意识: ...)" 等内部标签。
 ` },
+
                 ...messages.slice(0, -1),
                 { role: 'user', content: text },
                 { role: 'assistant', content: initialText } 
@@ -222,6 +326,7 @@ ${fullSoul}
 
             let toolCalls: any[] = [];
             let sleContentBuffer = "";
+            let isFilteringMode = false; // 🚀 [V3.1.5] 流式过滤器闸门
             
             for await (const chunk of stream) {
                 const delta = chunk.choices[0]?.delta;
@@ -237,19 +342,32 @@ ${fullSoul}
                 }
 
                 if (delta?.content) {
-                    sleContentBuffer += delta.content;
+                    const chars = delta.content.split('');
+                    for (const char of chars) {
+                        if (char === '(' || char === '[') {
+                            isFilteringMode = true; // 进入拦截状态
+                            console.log(`[StreamFilter] 🛑 Gate closed by '${char}'`);
+                            continue;
+                        }
+                        if (isFilteringMode) {
+                            if (char === ')' || char === ']') {
+                                isFilteringMode = false; // 丢弃拦截内容，恢复输出
+                                console.log(`[StreamFilter] ✅ Gate opened by '${char}'`);
+                            }
+                            continue; // 拦截态中，不输出任何内容
+                        }
+                        
+                        sleContentBuffer += char;
+                    }
                     
-                    // 🚀 [V3.1.0] 智能过滤器：如果内容流中包含了工具调用的特征，立即截断并丢弃
-                    // 同时也拦截极其简短的补全符号
+                    // 🚀 [V3.1.0] 智能过滤器后续修剪：如果内容流中包含了工具调用的特征，立即截断
                     if (sleContentBuffer.match(/\[调用|delegate_|\[delegate_|{"intent":|\[\{/)) {
-                       console.log(`[V3 SLE] Intercepted tool narration leak: ${sleContentBuffer}`);
-                       sleContentBuffer = ""; // 清空缓冲区，不向用户输出
+                       sleContentBuffer = ""; 
                        continue;
                     }
 
                     // 如果此时还没有检测到 tool_calls，且缓冲区内是正常的对话内容，则适时输出
-                    // 我们保留一个小缓冲区来应对可能的拆词
-                    if (!toolCalls.some(tc => tc !== undefined) && sleContentBuffer.length > 5) {
+                    if (!toolCalls.some(tc => tc !== undefined) && sleContentBuffer.length > 0) {
                         signal.interrupted = true; 
                         onChunk({ content: sleContentBuffer, isFinal: false, type: 'text' });
                         sleFullOutput += sleContentBuffer;
@@ -265,7 +383,7 @@ ${fullSoul}
                     if (jsonStr) {
                         const canvasUpdate = JSON.parse(jsonStr);
                         Object.assign(canvas.task_status, canvasUpdate.task_status);
-                        console.log(`[V3 Canvas] Updated:`, canvas.task_status);
+                        this.logCanvasEvent(callId, 'CANVAS_SLE_UPDATE', canvasUpdate.task_status);
                     }
                 } catch(e) {}
             }
@@ -281,8 +399,8 @@ ${fullSoul}
                     
                     try {
                         const openclawHome = path.join(path.dirname(this.workspaceRoot), 'openclaw_home');
-                        // 🚀 [V3.1.0] 修正命令：添加 --agent test-agent，否则 CLI 会因多 Agent 环境报错
-                        const command = `openclaw agent --agent test-agent --message "${intent.replace(/"/g, '\\"')}" --json`;
+                        // 🚀 [V3.1.7] 强制使用 --agent main 路径
+                        const command = `openclaw agent --agent main --message "${intent.replace(/"/g, '\\"')}" --json`;
                         console.log(`[V3 SLE] Executing: ${command}`);
                         
                         const cliPromise = execAsync(command, {
@@ -328,11 +446,21 @@ ${fullSoul}
                                 onChunk({ content: backgroundMsg, isFinal: false, type: 'text' });
                                 sleFullOutput += backgroundMsg;
 
-                                cliPromise.then(async ({ stdout, stderr }: any) => {
+                                 cliPromise.then(async ({ stdout, stderr }: any) => {
                                     const out = stdout || (stderr ? `错误: ${stderr}` : "任务完成。");
-                                    const butlerMsg = await this.asButler(out, intent);
-                                    if (notifier) await notifier(butlerMsg);
-                                }).catch(e => console.error(`[V3 Background Error] ${e}`));
+                                    
+                                    // 🚀 [V3.1.5] 主动通知归位：剥离原 notifier 逻辑，仅更新 Canvas
+                                    // Watchdog 会根据 status='READY' 和 is_delivered=false 发起播报
+                                    canvas.task_status.summary = out;
+                                     console.log(`[V3 SLE][${this.instanceId}][${callId}] 🏁 CLI Finished. Updating Canvas...`);
+                                     canvas.task_status.summary = out;
+                                     canvas.task_status.status = 'READY';
+                                     canvas.task_status.is_delivered = false;
+                                     canvas.task_status.importance_score = 1.0; 
+
+                                     this.logCanvasEvent(callId, 'CANVAS_CLI_READY', { summary: out });
+                                }).catch(e => console.error(`[V3 Background Error][${this.instanceId}][${callId}] ${e}`));
+
                             } else {
                                 throw err;
                             }
@@ -396,9 +524,5 @@ ${fullSoul}
         
         onChunk({ content: '', isFinal: true, type: 'text' });
         console.log(`[V3 Perf][${callId}] Process Finished in ${(performance.now() - totalStart).toFixed(2)}ms`);
-    }
-
-    destroy() {
-        if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
     }
 }

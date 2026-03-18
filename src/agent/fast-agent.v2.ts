@@ -358,6 +358,7 @@ export class FastAgent {
                     console.log(`[Perf][${callId}] SLE stream start-up took ${(performance.now() - sleLlmStart).toFixed(2)}ms`);
 
                     let toolCalls: any[] = [];
+                    let isFilteringMode = false;
                     for await (const chunk of stream) {
                         const delta = chunk.choices[0]?.delta;
                         
@@ -379,8 +380,25 @@ export class FastAgent {
                                 isToolCallDetected = true;
                             }
                         } else if (delta?.content) {
-                            queueToChunk({ content: delta.content, isFinal: false, type: 'text' });
-                            deliveredText += delta.content;
+                            // 🚀 [V2.0.5] 流式过滤器：拦截分片下发的潜意识标签
+                            const chars = delta.content.split('');
+                            let filteredDelta = "";
+                            for (const char of chars) {
+                                if (char === '(' || char === '[') {
+                                    isFilteringMode = true;
+                                    continue;
+                                }
+                                if (isFilteringMode) {
+                                    if (char === ')' || char === ']') isFilteringMode = false;
+                                    continue;
+                                }
+                                filteredDelta += char;
+                            }
+                            
+                            if (filteredDelta) {
+                                queueToChunk({ content: filteredDelta, isFinal: false, type: 'text' });
+                                deliveredText += filteredDelta;
+                            }
                         }
                     }
                     clearTimeout(watchdogTimer);
@@ -403,7 +421,7 @@ export class FastAgent {
                                     const { promisify } = require('util');
                                     const execAsync = promisify(exec);
                                     
-                                    const cliPromise = execAsync(`openclaw agent --agent test-agent --message "${intent.replace(/"/g, '\\"')}" --json`, {
+                                    const cliPromise = execAsync(`openclaw agent --agent main --message "${intent.replace(/"/g, '\\"')}" --json`, {
                                         env: { ...process.env, OPENCLAW_PROFILE: '/app/workspace' },
                                         timeout: 60000 
                                     });
@@ -441,9 +459,11 @@ export class FastAgent {
                                                            || (data.payloads && data.payloads[0]?.text)
                                                            || data.content || data.message || finalRes;
                                                 }
-                                                
-                                                const notifyText = `刚才我把那个"${intent.substring(0, 10).replace(/\[上下文记忆:.*?\]/g, '')}..."的事情处理好了，结果是：${finalRes}`;
-                                                await this.shadow.logDialogue(callId, 'assistant', notifyText);
+                                                                                                // 🚀 [V2.0.5] 激进抹除标签，防止技术噪音污染通知
+                                                 const cleanIntent = intent.replace(/[\(\[].*?[\)\]]/g, '').replace(/[\(\[].*$/g, '').trim();
+                                                 const cleanRes = finalRes.replace(/[\(\[].*?[\)\]]/g, '').replace(/[\(\[].*$/g, '').trim();
+                                                 const notifyText = `刚才我把那个"${cleanIntent.substring(0, 10)}..."的事情处理好了，结果是：${cleanRes}`;
+                                                 await this.shadow.logDialogue(callId, 'assistant', notifyText);
                                                 
                                                 if (notifier) {
                                                     await notifier(notifyText);
@@ -507,11 +527,29 @@ export class FastAgent {
                             })
                         );
 
+                        let isFollowUpFiltering = false;
                         for await (const chunk of followUpStream) {
                             const content = chunk.choices[0]?.delta?.content;
                             if (content) {
-                                queueToChunk({ content, isFinal: false, type: 'text' });
-                                deliveredText += content;
+                                // 🚀 [V2.0.5] 追随流过滤器
+                                const chars = content.split('');
+                                let filteredContent = "";
+                                for (const char of chars) {
+                                    if (char === '(' || char === '[') {
+                                        isFollowUpFiltering = true;
+                                        continue;
+                                    }
+                                    if (isFollowUpFiltering) {
+                                        if (char === ')' || char === ']') isFollowUpFiltering = false;
+                                        continue;
+                                    }
+                                    filteredContent += char;
+                                }
+
+                                if (filteredContent) {
+                                    queueToChunk({ content: filteredContent, isFinal: false, type: 'text' });
+                                    deliveredText += filteredContent;
+                                }
                             }
                         }
                     }

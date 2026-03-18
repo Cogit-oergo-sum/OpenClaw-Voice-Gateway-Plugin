@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { FastAgentResponse, IFastAgent } from './types';
+export { FastAgentResponse, IFastAgent };
 
 /**
  * FastAgent 核心类：实现【影子锚点 (Anchor Reflection) 语意缝合】架构 V2.3.0

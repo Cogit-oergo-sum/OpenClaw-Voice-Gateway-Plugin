@@ -36,22 +36,25 @@ graph TD
 *   **角色定位**：系统的唯一“麦克风”，负责极速响应、情绪共鸣与语意缝合。
 *   **模型选型**：专用响应模型（如 qwen-turbo），追求 TTFT < 600ms。
 *   **核心逻辑**：
-    *   **Layered Prompting**：Core Soul (稳定人设) + Skill (场景规则) 的分层组合。
-    *   **不作为原则**：原则上不直接调用工具（除基础画布读取），仅通过“垫词”买时间，等待 SLE 反馈。
+    *   [-] **Layered Prompting**：Core Soul (稳定人设) + Skill (场景规则) 的分层组合。
+    *   [-] **不作为原则**：原则上不直接调用工具（除基础画布读取），仅通过“垫词”买时间，等待 SLE 反馈。
     *   **影子注入**：接收 Watchdog 的指令，从历史 deliveredText 自然缝合。
 *   **职责补充**：不直接处理记忆，仅通过 Watchdog 拼装的上下文快照获取 **“全量对话背景”**，确保语气与之前的文本交互连贯。
+
 
 #### **SLE (Soul-Logic-Expert: 逻辑魂魄)**
 *   **角色定位**：幕后的大脑，负责复杂逻辑推演、工具调用与多轮次 openClaw 交互。
 *   **模型选型**：高智力模型（如 qwen-plus）。
 *   **核心逻辑**：
-    *   **画布生产**：将处理结果总结后写入 Canvas，标记 `READY` 状态。
+    *   [-] **画布生产**：将处理结果总结后写入 Canvas，标记 `READY` 状态。
     *   **重要性评估**：判定当前进展是否足以“拍一拍”SLC 进行用户播报。输出 `Importance Score`。
-*   **职责补充**：在工具调用和逻辑推演中引用 **“全局历史背景”**，避免做重复的确认或执行过时的指令。
+*   [-] **职责补充**：在工具调用和逻辑推演中引用 **“全局历史背景”**，避免做重复的确认或执行过时的指令。
+
 
 #### **Canvas (核心画布: 状态中转站)**
 *   **角色定位**：系统的“黑板”，作为 SLC 和 SLE 之间的物理隔离层 and 数据总线。
-*   **同步协议**：使用 `status: READY/PENDING` 机制解决读写竞态。只有标记为 `READY` 的单元才允许 SLC 读取。
+*   [-] **同步协议**：使用 `status: READY/PENDING` 机制解决读写竞态。只有标记为 `READY` 的单元才允许 SLC 读取。
+
 
 #### **Watchdog (守护进程: 调度中心)**
 *   **角色定位**：系统的协调者与维持者。
@@ -59,9 +62,10 @@ graph TD
     *   **VAD 感知调度**：在用户不说话且 AI 获得发言权时，将 Canvas 更新推送给 SLC。
     *   **提示词拼装服务**：负责实时拼装 SLC 和 SLE 的 System Prompt、User Prompt。基于 Core Soul、Memory、Skill 及 Canvas 状态动态重构。
     *   **心跳与主动诱导 (Heartbeat & Internal Trigger)**：
-        *   **心跳机制**：每 500ms 扫描一次 Canvas 状态。
+        *   [-] **心跳机制**：每 500ms 扫描一次 Canvas 状态。
         *   **Internal Trigger**：当 `status: READY` 且 VAD 为空闲时，若 SLC 未处于活跃对话，Watchdog 向 SLC 推送一个虚拟的 `__INTERNAL_TRIGGER__` 文本事件，诱导其开始消费画布数据并生成回复。
-    *   **入站加载 (Inbound Injection)**：在语音通话建立（Call Session Start）时，从 `Global Memory` 提取最近 3-5 轮文本交互背景，注入 SLC/SLE 初始态。
+    *   [-] **入站加载 (Inbound Injection)**：在语音通话建立（Call Session Start）时，从 `Global Memory` 提取最近 3-5 轮文本交互背景，注入 SLC/SLE 初始态。
+
     *   **出站同步 (Outbound Append)**：在每轮语音交互结束后的 `post_process` 阶段，剥离潜意识思考，将干净的语音对白实时同步到 `Global Memory`。
     *   **全量时序对齐**：负责将语音 Trace 与 文本 History 按时间戳进行线性对齐并生成摘要。
     
@@ -153,9 +157,10 @@ sequenceDiagram
 # 技术实现协议与风险规避 (Technical Protocols & Risk Mitigation)
 
 ## 1. 交互一致性保障：分层提示词架构 (Layered Prompting)
-为防止加载 Skill 时发生人设偏差或语气突变，SLC 采用分层注入机制：
+[-] 为防止加载 Skill 时发生人设偏差或语气突变，SLC 采用分层注入机制：
 - **Core Soul Layer (核心灵魂层)**：定义 Jarvis 的基本语气、称谓（先生）、口头禅及核心价值观。此层具有最高优先级，作为输出的“最终滤镜”。
 - **Skill Plugin Layer (场景插件层)**：仅包含逻辑、规则、事实数据。不带语气修饰词，由守护进程将 Core Soul 与其拼合。
+
 
 ## 2. SLC 动态生成与缝合协议 (SLC Dynamic Stitching Protocol)
 此协议是解决“断裂感”的核心，通过在 `assistant` 角色中注入临时指令，引导 SLC 进行语意衔接，且不污染 `system` 人设。
@@ -178,6 +183,7 @@ sequenceDiagram
 
 ## 3. 画布 (Canvas) 数据结构协议
 ### 3.1 标准 JSON 结构
+[-] 支持情况：基础结构已实现。
 ```json
 {
   "env": { "time": "19:23", "weather": "Sunny" },
@@ -195,6 +201,7 @@ sequenceDiagram
   }
 }
 ```
+
 ### 3.2 读写原则
 - **防重复播报**：SLC 消费成功后，由 Watchdog/SLC 将 `is_delivered` 置为 `true`。
 - **原子性更新**：SLE 更新任务时必须递增 `version` (时间戳)，SLC 仅消费比上一次处理过的 `version` 更大的数据。

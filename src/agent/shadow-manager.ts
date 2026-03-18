@@ -122,11 +122,20 @@ ${recentHistory || '暂无历史记录'}
                 .filter(l => l && l.callId === getCurrentCallId())
                 .slice(-limit);
 
-            return sessionLines.map(l => `${l.role === 'user' ? '用户' : '助理'}: ${l.content}`).join('\n');
+            // 🚀 [V3.1.5] 记忆脱水：只要见左括号 `(` 或 `[` 及其开始序列即激进抹除，彻底隔离历史噪音
+            return sessionLines.map(l => {
+                const cleanContent = l.content
+                    .replace(/[\(\[].*?[\)\]]/g, '') // 优先移除成对括号
+                    .replace(/[\(\[].*$/g, '')       // 激进抹除任何残留在结尾的左括号及其后续
+                    .replace(/刚才我把那个“.*?”的事情处理好了，结果是：/g, '') // 进一步清理 V2 残留模板
+                    .trim();
+                return `${l.role === 'user' ? '用户' : '助理'}: ${cleanContent}`;
+            }).join('\n');
         } catch (e) {
             return "";
         }
     }
+
 
     /**
      * 原子更新影子状态 (WAL 优先)
@@ -251,13 +260,21 @@ ${recentHistory || '暂无历史记录'}
                 .filter(l => l && l.callId === getCurrentCallId())
                 .slice(-limit);
 
-            const summary = sessionLines.map(l => `${l.role === 'user' ? '用户' : '助手'}: ${l.content}`).join(' | ');
-            const state = this.getScopedState();
+            // 🚀 [V3.1.5] 纯净背景：不再使用技术化标签，且激进过滤成对或残缺的括号
+            const summary = sessionLines.map(l => {
+                const cleanContent = l.content
+                    .replace(/[\(\[].*?[\)\]]/g, '')
+                    .replace(/[\(\[].*$/g, '') 
+                    .trim();
+                return `${l.role === 'user' ? '用户' : '助理'}: ${cleanContent}`;
+            }).join(' | ');
             
-            return `[上下文记忆: ${summary}][当前状态: ${state.mode}${state.task_id ? `, 任务ID: ${state.task_id}` : ''}] `;
+            const state = this.getScopedState();
+            return `[${summary}][当前状态: ${state.mode}${state.task_id ? `, 任务ID: ${state.task_id}` : ''}] `;
         } catch (e) {
             console.error('[ShadowManager] Failed to get recent context:', e);
             return "";
         }
     }
+
 }

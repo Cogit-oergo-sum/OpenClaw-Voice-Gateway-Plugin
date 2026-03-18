@@ -1,4 +1,5 @@
-import { FastAgent, FastAgentResponse } from '../src/agent/fast-agent';
+import { FastAgentV3 as FastAgent } from '../src/agent/fast-agent-v3';
+import { FastAgentResponse } from '../src/agent/types';
 import { callContextStorage } from '../src/context/ctx';
 import * as dotenv from 'dotenv';
 import * as readline from 'readline';

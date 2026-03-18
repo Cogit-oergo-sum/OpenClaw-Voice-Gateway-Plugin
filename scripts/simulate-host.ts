@@ -8,28 +8,50 @@ import * as path from 'path';
  * 用于在没有安装完整 OpenClaw 的环境下，直接启动并测试 Voice Gateway 插件。
  */
 
+import cors from 'cors';
+
 const app = express();
+
+// 1. 配置 CORS (确保在所有路由之前)
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// 2. 配置 Body Parser
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
-    console.log(`[HTTP] ${req.method} ${req.url}`);
+    if (req.method !== 'OPTIONS') {
+        console.log(`[HTTP] ${req.method} ${req.url}`);
+    }
     next();
 });
 
 console.log(`[MockHost] Using OPENCLAW_WORKSPACE: ${process.env.OPENCLAW_WORKSPACE}`);
 
-// 模拟 OpenClaw 的 PluginAPI 接口
+// 3. 模拟 OpenClaw 的 PluginAPI 接口
 const mockApi = {
     registerHttpRoute: (options: { path: string; handler: (req: Request, res: Response) => void | Promise<void> }) => {
         const { path: routePath, handler } = options;
         console.log(`[MockHost] Registered Route: ${routePath}`);
-        // @ts-ignore
+        
+        // 使用 .all 确保处理所有方法，但主要由插件逻辑决定
         app.all(routePath, async (req: Request, res: Response) => {
             try {
+                if (req.method === 'OPTIONS') return res.sendStatus(200);
+                
+                // 兜底：确保 req.body 至少是一个空对象，防止 destructuring 崩溃
+                if (!req.body) req.body = {};
+                
                 await handler(req, res);
             } catch (e: any) {
                 console.error(`[MockHost] Error in Route ${routePath}:`, e);
-                res.status(500).json({ error: e.message });
+                if (!res.headersSent) {
+                    res.status(500).json({ error: e.message });
+                }
             }
         });
     },
