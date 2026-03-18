@@ -35,7 +35,8 @@ export class ZegoApiClient {
      * 发送 POST 请求到 ZEGO Server
      */
     private async post<T>(action: string, payload: any): Promise<T> {
-        const url = `${this.baseUrl}/${this.buildAuthQueryParams()}&Action=${action}`;
+        const url = `${this.baseUrl}${this.buildAuthQueryParams()}&Action=${action}`;
+        console.log(`[ZegoApiClient] Calling POST: ${url}`);
 
         try {
             console.log(`[ZegoApiClient] Calling ${action} with Payload:`, JSON.stringify(payload, null, 2));

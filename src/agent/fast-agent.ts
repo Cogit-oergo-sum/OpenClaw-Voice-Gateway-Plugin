@@ -270,7 +270,7 @@ ${fullSoul}
                             const execAsync = promisify(exec);
                             
                             const openclawHome = path.join(path.dirname(this.workspaceRoot), 'openclaw_home');
-                            const command = `openclaw agent --message "${intent.replace(/"/g, '\\"')}" --json`;
+                            const command = `openclaw agent --agent main --session "${callId}" --message "${intent.replace(/"/g, '\\"')}" --json`;
                             
                             const cliPromise = execAsync(command, {
                                 env: { 

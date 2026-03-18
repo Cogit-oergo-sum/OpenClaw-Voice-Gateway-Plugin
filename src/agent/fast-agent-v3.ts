@@ -47,6 +47,7 @@ export class FastAgentV3 implements IFastAgent {
     private scanTimer: NodeJS.Timeout | null = null;
     private logDir: string;
     private instanceId: string = Math.random().toString(36).substring(7);
+    private processedSessions: Set<string> = new Set();
     
     /**
      * [V3.1.6] Canvas 审计日志：记录状态机所有流转轨迹
@@ -124,18 +125,16 @@ export class FastAgentV3 implements IFastAgent {
      */
     private startWatchdog() {
         if (this.scanTimer) clearInterval(this.scanTimer);
-        console.log(`[Watchdog] 🛡️ Started. Scanning interval: 1000ms`);
+        console.log(`[Watchdog] 🛡️ Started. Scanning interval: 10000ms`);
         
-        let heartbeatCount = 0;
-
         this.scanTimer = setInterval(async () => {
-            heartbeatCount++;
-            if (heartbeatCount % 10 === 0) { 
-                const details = Array.from(this.canvases.entries()).map(([id, c]) => 
-                    `${id}(${c.task_status.status},is_del=${c.task_status.is_delivered},notif=${!!this.notifiers.get(id)})`
-                ).join(', ');
-                console.log(`[Watchdog][${this.instanceId}] 💓 Heartbeat: ${this.canvases.size} canvases: [${details || 'none'}]`);
-            }
+             const details = Array.from(this.canvases.entries()).map(([id, c]) => 
+                 `${id}(${c.task_status.status},is_del=${c.task_status.is_delivered},notif=${!!this.notifiers.get(id)})`
+             ).join(', ');
+             console.log(`[Watchdog][${this.instanceId}] 💓 Heartbeat: ${this.canvases.size} canvases: [${details || 'none'}]`);
+
+             // 🚀 [V3.3.6] 磁盘同步，感知外部系统（如 openclaw core）的状态变更
+             await this.syncCanvasesFromDisk();
 
             for (const [callId, canvas] of this.canvases.entries()) {
                 const status = canvas.task_status;
@@ -144,35 +143,77 @@ export class FastAgentV3 implements IFastAgent {
                 if (status.status === 'READY' && !status.is_delivered) {
                     if (status.importance_score < 0.7) continue;
 
-                    // 🚀 [V3.1.9] 关键修复：立即标记投递中，防止并发心跳重复触发
+                    // 🚀 [V3.3.0] 关键修复：立即标记投递中，防止并发心跳重复触发
                     status.is_delivered = true; 
 
                     const notifier = this.notifiers.get(callId);
                     if (notifier) {
-                        console.log(`[Watchdog][${this.instanceId}] 📣 TRIGGERING for ${callId}: "${status.summary.substring(0, 30)}..."`);
-                        await this.logCanvasEvent(callId, 'WATCHDOG_TRIGGER', { summary: status.summary });
+                        console.log(`[Watchdog][${this.instanceId}] 📣 INTERNAL_TRIGGER for ${callId}: status summary is "${status.summary.substring(0, 30)}..."`);
+                        await this.logCanvasEvent(callId, 'WATCHDOG_INTERNAL_TRIGGER', { status });
                         
                         try {
-                            const butlerMsg = await this.asButler(status.summary, "后台任务汇报");
-                            await notifier(butlerMsg);
-                            console.log(`[Watchdog][${this.instanceId}] ✅ Delivered to ${callId}`);
-                            await this.shadow.logDialogue(callId, 'assistant', butlerMsg);
-                            await this.logCanvasEvent(callId, 'WATCHDOG_DELIVERED', { butlerMsg });
+                            const notificationBuffer = status.summary;
+                            
+                            // 🚀 [V3.2.0] 直接交付给 SLC 处理情绪表达
+                             await this.process(
+                                [{ role: 'user', content: '__INTERNAL_TRIGGER__' }],
+                                (chunk) => {
+                                    // Watchdog 通知不需要向 SLC 发送流（因为它直接推送到 notifier）
+                                    // 仅作为触发器注入上下文
+                                },
+                                async (cleanMsg) => {
+                                  await notifier(cleanMsg);
+                                }
+                            );
+                            
+                            console.log(`[Watchdog][${this.instanceId}] ✅ Delivered via SLC/SLE loop to ${callId}`);
+                            await this.logCanvasEvent(callId, 'WATCHDOG_DELIVERED', { callId });
                         } catch (e) {
                             console.error(`[Watchdog][${this.instanceId}] ❌ Delivery Failed for ${callId}:`, e);
                             status.is_delivered = false; // 允许下次重试
                         }
                     } else {
                         status.is_delivered = false; // 等待 notifier 就位后再触发
-                        if (heartbeatCount % 5 === 0) {
-                            console.warn(`[Watchdog][${this.instanceId}][${callId}] ⚠️ READY but NO NOTIFIER yet.`);
-                        }
                     }
                 }
             }
-        }, 1000);
+        }, 10000);
     }
 
+
+    /**
+     * [V3.3.6] 磁盘同步：从审计日志中恢复最新的画布状态
+     * 解决外部系统（CLI, Timers）更新状态后，本进程内存不感知的问题
+     */
+    private async syncCanvasesFromDisk() {
+        try {
+            const logPath = path.join(this.logDir, 'canvas.jsonl');
+            if (!fs.existsSync(logPath)) return;
+            
+            const content = await fs.promises.readFile(logPath, 'utf8');
+            const lines = content.trim().split('\n').slice(-100); // 仅扫描最近 100 条变动以平衡性能
+            
+            for (const line of lines) {
+                try {
+                    const entry = JSON.parse(line);
+                    if (entry.callId && entry.state?.task_status && this.canvases.has(entry.callId)) {
+                        const canvas = this.canvases.get(entry.callId)!;
+                        if (entry.state.task_status.version >= canvas.task_status.version) {
+                           // 🚀 防止回滚：如果内存中已投递，不被磁盘的老状态覆盖为未投递
+                           const wasDelivered = canvas.task_status.is_delivered;
+                           if (canvas.task_status.status !== entry.state.task_status.status) {
+                               console.log(`[Watchdog] 🔄 Session ${entry.callId} state synced: ${canvas.task_status.status} -> ${entry.state.task_status.status}`);
+                           }
+                           Object.assign(canvas.task_status, entry.state.task_status);
+                           if (wasDelivered) canvas.task_status.is_delivered = true;
+                        }
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {
+            console.error('[Watchdog] Disk sync failed:', e);
+        }
+    }
 
     private getCanvas(callId: string): CanvasState {
         if (!this.canvases.has(callId)) {
@@ -235,16 +276,31 @@ export class FastAgentV3 implements IFastAgent {
         return slcFullText;
     }
 
+    /**
+     * [V3.3.7] 终极噪音净化：在任何播报前清洗所有技术关键词和内心 OS
+     */
+    private cleanText(text: string): string {
+        return text
+            .replace(/\(已.*?闭环\)/g, '')
+            .replace(/\(已.*?同步.*?\)/g, '')
+            .replace(/\[调用.*?\]/g, '')
+            .replace(/\[\{.*?\}\]/g, '')
+            .replace(/HEARTBEAT_OK/g, '')
+            .replace(/session_start/g, '')
+            .trim();
+    }
+
     private async asButler(result: string, intent: string): Promise<string> {
         const prompt = `你是一个优雅的英式管家 Jarvis。
-用户之前的意图是: "${intent}"
-主脑执行任务的结果是: "${result}"
+用户意图: "${intent}"
+需要转化的内容: "${result}"
 
-请以管家的口吻汇报任务完成。
-要求：
-1. 极其简洁，直接说重点。
-2. 即使任务失败或超时，也要表现得非常有礼貌且在掌控之中。
-3. 严禁复读任何技术标签如 "[上下文记忆: ...]"、"(潜意识: ...)" 或主脑汇报的原始日志。`;
+任务：将“需要转化的内容”转化为一段极其自然、优雅、温润的管家式口语。
+【规则】:
+1. 绝对严禁复读任务、系统、JSON、状态、处理、闭环、同步、Memory、日志、Heartbeat 等技术词汇。
+2. 绝对严禁复读或提及任何括号内的备注，如 "(已闭环)", "(已同步...)", "HEARTBEAT_OK"。
+3. 如果被转化的内容全是技术噪音，请直接说：“先生，那件事已经办好了。”
+4. 极其自然口语化，如同在桌旁低语汇报，严禁超过 25 字。`;
 
         try {
             const resp = await this.openai.chat.completions.create({
@@ -254,7 +310,6 @@ export class FastAgentV3 implements IFastAgent {
                 max_tokens: 150
             });
             let reply = resp.choices[0]?.message?.content || "先生，办妥了。";
-            // 🚀 [V3.1.5] 最终防御：强制激进抹除可能的标签残留
             return reply.replace(/[\(\[].*?[\)\]]/g, '').replace(/[\(\[].*$/g, '').trim();
         } catch (e) {
             return "先生，事情已经办妥了。";
@@ -279,7 +334,6 @@ export class FastAgentV3 implements IFastAgent {
         if (notifier) this.notifiers.set(callId, notifier);
 
         const sleModel = this.config.fastAgent?.sleModel || this.config.llm.model;
-
         let sleFullOutput = "";
 
         try {
@@ -291,6 +345,13 @@ ${fullSoul}
 1. SLC 已经开了个头: "${initialText}"
 2. 你必须保持【语意缝合】，从这个锚点衔接下去。
 3. 严禁复读 "${initialText}"。
+
+# 虚拟触发指令 (Internal Trigger)
+- 如果当前输入是 "__INTERNAL_TRIGGER__"，表示后台任务刚刚出结果了。
+- 你必须查阅画布状态：
+    - 如果画布中的 \`summary\` 包含 "错误"、"failed"、"missing" 等失败信息，你必须如实告知先生任务遇到了困难，并简要说明原因。
+    - 严禁在任务失败时说“已闭环”或“已办妥”。
+- 你必须以 Jarvis 的得体语气汇报成果，不要包含任何技术标签。
 
 # 行动指令 (Action Protocol)
 - 当用户提到“查看、查找、搜索、发邮件、读文件、删除文件”时，你必须立即调用 \`delegate_openclaw\` 工具。
@@ -326,7 +387,7 @@ ${fullSoul}
 
             let toolCalls: any[] = [];
             let sleContentBuffer = "";
-            let isFilteringMode = false; // 🚀 [V3.1.5] 流式过滤器闸门
+            let isFilteringMode = false;
             
             for await (const chunk of stream) {
                 const delta = chunk.choices[0]?.delta;
@@ -345,63 +406,64 @@ ${fullSoul}
                     const chars = delta.content.split('');
                     for (const char of chars) {
                         if (char === '(' || char === '[') {
-                            isFilteringMode = true; // 进入拦截状态
-                            console.log(`[StreamFilter] 🛑 Gate closed by '${char}'`);
+                            isFilteringMode = true;
                             continue;
                         }
                         if (isFilteringMode) {
                             if (char === ')' || char === ']') {
-                                isFilteringMode = false; // 丢弃拦截内容，恢复输出
-                                console.log(`[StreamFilter] ✅ Gate opened by '${char}'`);
+                                isFilteringMode = false;
                             }
-                            continue; // 拦截态中，不输出任何内容
+                            continue;
                         }
-                        
                         sleContentBuffer += char;
                     }
                     
-                    // 🚀 [V3.1.0] 智能过滤器后续修剪：如果内容流中包含了工具调用的特征，立即截断
                     if (sleContentBuffer.match(/\[调用|delegate_|\[delegate_|{"intent":|\[\{/)) {
                        sleContentBuffer = ""; 
                        continue;
                     }
 
-                    // 如果此时还没有检测到 tool_calls，且缓冲区内是正常的对话内容，则适时输出
                     if (!toolCalls.some(tc => tc !== undefined) && sleContentBuffer.length > 0) {
                         signal.interrupted = true; 
-                        onChunk({ content: sleContentBuffer, isFinal: false, type: 'text' });
-                        sleFullOutput += sleContentBuffer;
+                        const cleanFrag = this.cleanText(sleContentBuffer);
+                        if (cleanFrag) {
+                          onChunk({ content: cleanFrag, isFinal: false, type: 'text' });
+                          sleFullOutput += cleanFrag;
+                        }
                         sleContentBuffer = "";
                     }
                 }
             }
 
-            // 处理可能在 text 中的 JSON 画布更新
+            // 🚀 [V3.3.4] 全局噪音净化
+            if (sleFullOutput.length > 0) {
+                 sleFullOutput = sleFullOutput
+                    .replace(/\(已.*?闭环\)/g, '')
+                    .replace(/\(已.*?同步.*?\)/g, '')
+                    .replace(/\[调用.*?\]/g, '')
+                    .replace(/\[\{.*?\}\]/g, '')
+                    .replace(/HEARTBEAT_OK/g, '')
+                    .trim();
+            }
+
             if (sleFullOutput.includes('```json')) {
                 try {
                     const jsonStr = sleFullOutput.match(/```json\s*(\{[\s\S]*?\})\s*```/)?.[1];
                     if (jsonStr) {
                         const canvasUpdate = JSON.parse(jsonStr);
                         Object.assign(canvas.task_status, canvasUpdate.task_status);
-                        this.logCanvasEvent(callId, 'CANVAS_SLE_UPDATE', canvasUpdate.task_status);
                     }
                 } catch(e) {}
             }
 
-            // 工具调用处理
             if (toolCalls.length > 0) {
                 const finalToolCalls = toolCalls.filter(tc => tc !== undefined);
-                console.log(`[V3 SLE] Detected ${finalToolCalls.length} tool calls.`);
                 for (const tc of finalToolCalls) {
                     const args = JSON.parse(tc.function.arguments || '{}');
                     const intent = args.intent || text;
-                    console.log(`[V3 SLE] Executing tool: ${tc.function.name} with intent: ${intent}`);
-                    
                     try {
                         const openclawHome = path.join(path.dirname(this.workspaceRoot), 'openclaw_home');
-                        // 🚀 [V3.1.7] 强制使用 --agent main 路径
-                        const command = `openclaw agent --agent main --message "${intent.replace(/"/g, '\\"')}" --json`;
-                        console.log(`[V3 SLE] Executing: ${command}`);
+                        const command = `openclaw agent --agent main --session-id "${callId}" --message "${intent.replace(/"/g, '\\"')}" --json`;
                         
                         const cliPromise = execAsync(command, {
                             env: { 
@@ -427,12 +489,19 @@ ${fullSoul}
                                 result = (data.result?.payloads && data.result.payloads[0]?.text)
                                        || (data.payloads && data.payloads[0]?.text)
                                        || data.content || data.message || JSON.stringify(data);
+                                
+                                // 🚀 [V3.3.5] 关键：实时同步画布状态
+                                if (data.task_status) {
+                                    Object.assign(canvas.task_status, data.task_status);
+                                    this.logCanvasEvent(callId, 'CANVAS_CLI_SYNC', { status: data.task_status.status });
+                                }
                             } else {
-                                // 🚀 [V3.1.0] 改进错误处理：如果 stdout 为空但 stderr 有错，不应显示“已办妥”
-                                if (!stdout && stderr) {
+                                // 🚀 [V3.3.2] 防噪音机制：过滤 HEARTBEAT_OK 等调试信息
+                                result = stdout.replace(/HEARTBEAT_OK/g, '').trim(); 
+                                if (!result && stderr) {
                                   result = `执行失败: ${stderr.split('\n')[0]}`;
-                                } else {
-                                  result = stdout || "任务已提交。";
+                                } else if (!result) {
+                                  result = "已按指令处理妥当。";
                                 }
                             }
                             
@@ -440,27 +509,26 @@ ${fullSoul}
                             onChunk({ content: `\n${butlerMsg}`, isFinal: false, type: 'text' });
                             sleFullOutput += butlerMsg;
                             
-                        } catch (err: any) {
+                         } catch (err: any) {
                             if (err.message === 'TIMEOUT_5S') {
                                 const backgroundMsg = "\n先生，这需要花点工夫，我替您盯着，结果一出来就告诉您。";
                                 onChunk({ content: backgroundMsg, isFinal: false, type: 'text' });
                                 sleFullOutput += backgroundMsg;
 
-                                 cliPromise.then(async ({ stdout, stderr }: any) => {
-                                    const out = stdout || (stderr ? `错误: ${stderr}` : "任务完成。");
-                                    
-                                    // 🚀 [V3.1.5] 主动通知归位：剥离原 notifier 逻辑，仅更新 Canvas
-                                    // Watchdog 会根据 status='READY' 和 is_delivered=false 发起播报
-                                    canvas.task_status.summary = out;
-                                     console.log(`[V3 SLE][${this.instanceId}][${callId}] 🏁 CLI Finished. Updating Canvas...`);
+                                 cliPromise.then(async ({ stdout, stderr }) => {
+                                     const out = stdout || (stderr ? `错误: ${stderr}` : "任务完成。");
                                      canvas.task_status.summary = out;
                                      canvas.task_status.status = 'READY';
                                      canvas.task_status.is_delivered = false;
                                      canvas.task_status.importance_score = 1.0; 
-
                                      this.logCanvasEvent(callId, 'CANVAS_CLI_READY', { summary: out });
-                                }).catch(e => console.error(`[V3 Background Error][${this.instanceId}][${callId}] ${e}`));
-
+                                 }).catch(e => {
+                                     console.error(`[V3 Background Error] ${e}`);
+                                     canvas.task_status.summary = `任务执行出错: ${e.message}`;
+                                     canvas.task_status.status = 'READY';
+                                     canvas.task_status.is_delivered = false;
+                                     this.logCanvasEvent(callId, 'CANVAS_CLI_ERROR', { error: e.message });
+                                 });
                             } else {
                                 throw err;
                             }
@@ -470,7 +538,6 @@ ${fullSoul}
                     }
                 }
             }
-
         } catch (e: any) {
             console.error("[V3 SLE Error]", e.message);
         }
@@ -480,44 +547,59 @@ ${fullSoul}
     async process(
         messages: any[], 
         onChunk: (resp: FastAgentResponse) => void,
-        notifier?: (text: string) => Promise<void>
+        notifier?: (text: string) => Promise<void>,
+        callIdOverride?: string
     ) {
         const totalStart = performance.now();
-        const callId = getCurrentCallId() || 'anonymous';
+        const callId = callIdOverride || getCurrentCallId() || 'anonymous';
         const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
         const text = lastUserMessage?.content || "";
         
-        // 1. 初始化并联
+        const isNewSession = !this.processedSessions.has(callId);
+        if (isNewSession) {
+            console.log(`[V3 Inbound] 🚀 New Session Detected for ${callId}: Injecting Global History.`);
+            this.processedSessions.add(callId);
+        }
+
         const signal = { interrupted: false, slcDone: false };
         let slcOutput = "";
 
-        // 占位
-        onChunk({ content: " ", type: 'bridge', isFinal: false });
+        if (text !== '__INTERNAL_TRIGGER__') {
+            onChunk({ content: " ", type: 'bridge', isFinal: false });
+        }
 
-        // 影子恢复与记忆拼装
         const fullSoul = await (async () => {
             await this.shadow.updateState({ mode: 'session_start', metadata: { text_input: text } });
             await this.shadow.recover(callId);
-            const soul = await this.shadow.getContextPrompts();
+            const soul = await this.shadow.getContextPrompts(isNewSession);
             this.refreshCompactPersona(); 
-            await this.shadow.logDialogue(callId, 'user', text);
-            return soul;
+            
+            if (text !== '__INTERNAL_TRIGGER__') {
+                await this.shadow.logDialogue(callId, 'user', text);
+            }
+            
+            const canvas = this.getCanvas(callId);
+            const canvasInjection = `
+[核心画布实时状态 (Canvas State)]
+环境: ${JSON.stringify(canvas.env)}
+任务状态: ${JSON.stringify(canvas.task_status)}
+最后播报断点: ${canvas.context.last_spoken_fragment || '无'}
+`;
+            return soul + canvasInjection;
         })();
 
-        // 启动 SLC
-        const slcPromise = this.runSLC(text, "", onChunk, signal).then(res => {
-            slcOutput = res;
-            signal.slcDone = true;
-            return res;
-        });
+        const slcPromise = text === '__INTERNAL_TRIGGER__' 
+            ? Promise.resolve("") 
+            : this.runSLC(text, "", onChunk, signal).then((res: any) => {
+                slcOutput = res;
+                signal.slcDone = true;
+                return res;
+            });
 
-        // 启动 SLE (V3 允许稍微等待 SLC 开口，也可以完全并联)
         const sleOutput = await this.runSLE(messages, text, " ", fullSoul, onChunk, callId, signal, notifier);
-
         const slcFinalOutput = await slcPromise;
         
-        // 记录对话历史
-        const fullAssistantReply = (slcFinalOutput + sleOutput).trim();
+        const fullAssistantReply = (slcFinalOutput + (sleOutput || "")).trim();
         if (fullAssistantReply) {
             await this.shadow.logDialogue(callId, 'assistant', fullAssistantReply);
         }

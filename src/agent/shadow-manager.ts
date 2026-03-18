@@ -50,8 +50,9 @@ export class ShadowManager {
 
     /**
      * 初始化：从持久化存储加载并构建 Prompt
+     * [V3.2.0] isNewSession: 如果是首次连接，则从全局记忆库（跨会话）加载背景
      */
-    async getContextPrompts(): Promise<string> {
+    async getContextPrompts(isNewSession: boolean = false): Promise<string> {
         const callId = getCurrentCallId() || 'global';
         const state = this.getScopedState();
         
@@ -62,7 +63,8 @@ export class ShadowManager {
         const memoryMd = await readWorkspaceFile(this.workspaceRoot, 'memory.md') || '';
 
         // [V1.9.0] 提取最近 5 轮对话作为短期记忆增强
-        const recentHistory = await this.getRecentDialogueContextRaw(5);
+        // [V3.2.0] 入站加载：如果是新 Session，不限制 CallId，拉取全局最后几轮
+        const recentHistory = await this.getRecentDialogueContextRaw(5, isNewSession ? null : callId);
         
         return `
 [人设与指南 (Persona & Agents Guidelines)]
@@ -76,7 +78,7 @@ ${userMd}
 [核心长期记忆 (Long-term Memory)]
 ${memoryMd}
 
-[短期会话记录 (Recent Conversation)]
+[短期会话记录 (Recent Conversation)${isNewSession ? ' (来自全局同步记忆)' : ''}]
 ${recentHistory || '暂无历史记录'}
 
 [当前影子状态 (Shadow State - ${callId})]
@@ -106,8 +108,9 @@ ${recentHistory || '暂无历史记录'}
 
     /**
      * [V1.9.0] 获取原始对话流，不带信封包装
+     * [V3.2.0] 支持 global 模式：不限制 callId，用于入站加载
      */
-    private async getRecentDialogueContextRaw(limit: number = 5): Promise<string> {
+    private async getRecentDialogueContextRaw(limit: number = 5, callIdFilter: string | null = null): Promise<string> {
         try {
             const date = new Date().toISOString().split('T')[0];
             const logFile = path.join(this.workspaceRoot, `memory/${date}.jsonl`);
@@ -119,7 +122,7 @@ ${recentHistory || '暂无历史记录'}
                 .map(l => {
                     try { return JSON.parse(l); } catch(e) { return null; }
                 })
-                .filter(l => l && l.callId === getCurrentCallId())
+                .filter(l => l && (!callIdFilter || l.callId === callIdFilter))
                 .slice(-limit);
 
             // 🚀 [V3.1.5] 记忆脱水：只要见左括号 `(` 或 `[` 及其开始序列即激进抹除，彻底隔离历史噪音
@@ -129,7 +132,8 @@ ${recentHistory || '暂无历史记录'}
                     .replace(/[\(\[].*$/g, '')       // 激进抹除任何残留在结尾的左括号及其后续
                     .replace(/刚才我把那个“.*?”的事情处理好了，结果是：/g, '') // 进一步清理 V2 残留模板
                     .trim();
-                return `${l.role === 'user' ? '用户' : '助理'}: ${cleanContent}`;
+                const role = l.role === 'user' ? '用户' : '助理';
+                return `${role}: ${cleanContent}`;
             }).join('\n');
         } catch (e) {
             return "";

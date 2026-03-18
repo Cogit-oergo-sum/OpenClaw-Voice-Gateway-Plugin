@@ -63,9 +63,9 @@ const mockApi = {
 // 模拟 OpenClaw 注入的配置 (从 .env 或默认值中取)
 const mockConfig = {
     zego: {
-        appId: 0,
-        serverSecret: '',
-        aiAgentBaseUrl: 'http://localhost:18789'
+        appId: Number(process.env.ZEGO_APP_ID) || 0,
+        serverSecret: process.env.ZEGO_SERVER_SECRET || '',
+        aiAgentBaseUrl: process.env.ZEGO_AI_AGENT_BASE_URL
     },
     llm: {
         provider: 'bailian',
