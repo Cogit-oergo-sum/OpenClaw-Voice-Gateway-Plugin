@@ -83,15 +83,21 @@ ${contextHint ? `执行背景: ${contextHint}` : ''}` },
     }
 
     async process(
-        messages: any[], 
+        text: string, 
         onChunk: (resp: FastAgentResponse) => void,
-        notifier?: (text: string) => Promise<void>
+        notifier?: (text: string, trace?: string[]) => Promise<void>,
+        callIdOverride?: string
     ) {
         const totalStart = performance.now();
         let isTurnActive = true; 
-        const callId = getCurrentCallId() || 'anonymous';
-        const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
-        const text = lastUserMessage?.content || "";
+        const callId = callIdOverride || getCurrentCallId() || 'anonymous';
+        
+        // 🚀 [V3.3.9] SSOT 内存恢复
+        const managedMessages = await this.shadow.getHistoryMessages(callId, 10);
+        if (text !== '__INTERNAL_TRIGGER__' && text !== '__IDLE_TRIGGER__') {
+            await this.shadow.logDialogue(callId, 'user', text);
+            managedMessages.push({ role: 'user', content: text });
+        }
         
         let deliveredText = ""; 
         let semanticAnchor = ""; // [V2.3.0] 重点：仅存储具有语意连续性的文本，排除垫词
@@ -201,7 +207,7 @@ ${fullSoul}
 3. 严格禁止在开头重复 "${initialText}"。
 4. **行动派要求**：如果用户提到“查看、查找、搜索、发邮件、读文件（包括doc目录下）”，请立即调用 \`delegate_openclaw\` 工具，不要解释。
 5. 保持极其口语化，像一个真实的管家在贴耳交流。` },
-                    ...messages.slice(0, -1),
+                    ...managedMessages.slice(0, -1),
                     { role: 'user', content: text },
                     { role: 'assistant', content: initialText } 
                 ];

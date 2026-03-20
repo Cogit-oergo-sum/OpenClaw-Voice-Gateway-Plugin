@@ -6,9 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/voice': 'http://localhost:18790',
-      '/chat': 'http://localhost:18790',
-      '/hooks': 'http://localhost:18790'
+      '/voice': 'http://localhost:18795',
+      '/chat': 'http://localhost:18795',
+      '/hooks': 'http://localhost:18795'
     }
   }
 })

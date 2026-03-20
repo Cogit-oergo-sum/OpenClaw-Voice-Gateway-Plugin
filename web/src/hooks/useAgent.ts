@@ -241,7 +241,8 @@ export function useAgent() {
               id: 'notify-' + Date.now(), 
               role: 'agent', 
               text: data.content, 
-              isTyping: false 
+              isTyping: false,
+              trace: data.trace
             }
           ]);
           triggerPulse();
@@ -307,12 +308,19 @@ export function useAgent() {
               try {
                 const data = JSON.parse(dataStr);
                 if (data.type === 'text' || data.type === 'filler') {
-                  fullText += data.content;
+                  if (data.content) {
+                    fullText += data.content;
+                  }
                   setMessages(prev => {
                     const updated = [...prev];
                     const idx = updated.findIndex(m => m.id === agentMsgId);
                     if (idx !== -1) {
-                      updated[idx] = { ...updated[idx], text: fullText, isTyping: !data.isFinal };
+                      updated[idx] = { 
+                        ...updated[idx], 
+                        text: fullText, 
+                        isTyping: !data.isFinal,
+                        trace: data.trace || updated[idx].trace 
+                      };
                     }
                     return updated;
                   });

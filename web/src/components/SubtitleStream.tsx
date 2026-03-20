@@ -13,6 +13,7 @@ export interface Message {
   text: string;
   isInterrupted?: boolean;
   isTyping?: boolean;
+  trace?: string[];
 }
 
 interface SubtitleStreamProps {

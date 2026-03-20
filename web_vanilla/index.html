@@ -22,11 +22,19 @@
         .chat-window { height: 300px; overflow-y: auto; background: #282c34; color: #abb2bf; padding: 1rem; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.9rem; margin-bottom: 1rem; }
         .chat-msg { margin-bottom: 0.5rem; line-height: 1.4; }
         .chat-msg.user { color: #61afef; }
-        .chat-msg.ai { color: #98c379; }
-        .chat-msg.filler { color: #e5c07b; font-style: italic; opacity: 0.9; }
+        .chat-msg.ai { color: #ffffff; }
+        .chat-msg.filler { color: #ffffff; }
         .chat-msg.thought { color: #c678dd; font-size: 0.8rem; opacity: 0.8; margin-left: 1rem; border-left: 2px solid #555; padding-left: 0.5rem; }
-        .relay-slc { color: #e5c07b; font-style: italic; border-bottom: 1px dashed #555; }
-        .relay-sle { color: #98c379; }
+        
+        /* [V3.2] 状态颜色映射 */
+        .relay-thought { color: #888; font-size: 0.8rem; font-style: italic; display: block; border-left: 2px solid #555; padding-left: 0.5rem; margin: 0.5rem 0; opacity: 0.8; }
+        .relay-user { color: #61afef; } /* 蓝色: 用户输入 */
+        .relay-ai { color: #ffffff; } /* 白色: 标签颜色 */
+        .relay-chat { color: #ffffff; } /* 白色: 直接对话 */
+        .relay-waiting { color: #ff6b6b; font-style: italic; } /* 红色: 任务处理中 (垫词) */
+        .relay-idle { color: #ff85a2; } /* 粉色: 心跳/闲聊 */
+        .relay-internal { color: #c678dd; font-weight: bold; } /* 紫色: 任务完成 */
+        
         .chat-label { font-weight: bold; margin-right: 0.5rem; }
         .chat-input-group { display: flex; gap: 0.5rem; }
         .chat-input-group input { flex: 1; padding: 0.8rem; border: 1px solid #ccc; border-radius: 8px; outline: none; }
@@ -37,7 +45,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Voice Plugin 调试终端 <span id="conn-state" class="tag idle">IDLE</span></h1>
+        <h1>Voice Plugin 调试终端 <span id="conn-state" class="tag idle">IDLE</span> <span id="user-id-display" style="float: right; font-size: 0.8rem; color: #888; font-weight: normal; margin-top: 0.5rem;">UserId: --</span></h1>
         
         <div class="controls">
             <button id="btn-start">📱 发起通话 (Start Call)</button>
@@ -54,7 +62,7 @@
         <div class="chat-container">
             <h3>🚀 Fast Agent 文本仿真互动 (Text-MVP)</h3>
             <div id="chat-window" class="chat-window">
-                <div class="chat-msg ai">[Jarvis]: 早上好，先生。有什么我可以帮您的？</div>
+                <div class="chat-msg ai">[Jarvis]: 早上好，先生。有什么我可以帮您的？<br/><small style="opacity:0.5">(图例 - 白色:直接对话 | 红色:任务处理中 | 粉色:自动唤醒 | 紫色:任务汇报)</small></div>
             </div>
             <div class="chat-input-group">
                 <input type="text" id="chat-input" placeholder="输入信息，体验 Fast Agent 响应逻辑..." />

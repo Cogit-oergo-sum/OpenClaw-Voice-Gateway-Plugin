@@ -1,6 +1,7 @@
 // 极简测试逻辑: HTTP 控制信令 + ZEGO RTC 引擎
 const GATEWAY_URL = 'http://localhost:18795';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
+document.getElementById('user-id-display').innerText = 'SessionId: ' + MOCK_USER_ID;
 
 const btnStart = document.getElementById('btn-start');
 const btnEnd = document.getElementById('btn-end');
@@ -180,29 +181,45 @@ function subscribeEvents() {
     eventSource.onmessage = (e) => {
         try {
             const data = JSON.parse(e.data);
-            if (data.type === 'notification') {
+            if (data.type === 'notification' || data.type === 'internal') {
                 log('🔔 收到异步后台任务通知');
-                appendChat(data.content, 'ai');
-            } else if (data.type === 'system') {
-                console.log('[System]', data.content);
+                appendChat(data.content, 'internal', data.trace);
+            } else if (data.type === 'system' || data.type === 'idle') {
+                appendChat(data.content, 'idle', data.trace);
             }
         } catch(err) {}
     };
 }
 subscribeEvents();
 
-function appendChat(content, type = 'ai') {
+function appendChat(content, type = 'chat', trace = null) {
     const msgDiv = document.createElement('div');
-    msgDiv.className = `chat-msg ${type}`;
+    msgDiv.className = `chat-msg relay-${type}`;
     
     const label = document.createElement('span');
     label.className = 'chat-label';
-    label.innerText = type === 'user' ? '[You]: ' : '[Jarvis]: ';
+    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    label.innerText = type === 'user' ? `[${timeStr}][You]: ` : `[${timeStr}][Jarvis]: `;
     msgDiv.appendChild(label);
 
     const body = document.createElement('span');
     body.className = 'chat-body';
-    body.innerText = content;
+    
+    // 如果有决策链路，先并入绿色 trace
+    if (trace && Array.isArray(trace) && trace.length > 0) {
+        const traceDiv = document.createElement('div');
+        traceDiv.style.color = '#4ade80'; // 绿色
+        traceDiv.style.fontSize = '0.7rem';
+        traceDiv.style.fontFamily = 'monospace';
+        traceDiv.style.marginBottom = '2px';
+        traceDiv.style.fontStyle = 'italic';
+        traceDiv.innerText = trace.join(' ➔ ');
+        body.appendChild(traceDiv);
+    }
+
+    const contentSpan = document.createElement('span');
+    contentSpan.innerText = content;
+    body.appendChild(contentSpan);
     msgDiv.appendChild(body);
     
     chatWindow.appendChild(msgDiv);
@@ -243,34 +260,28 @@ btnSend.addEventListener('click', async () => {
                     const dataStr = line.replace('data: ', '').trim();
                     if (dataStr === '[DONE]') break;
 
-                    try {
-                        const data = JSON.parse(dataStr);
-                        if (data.type === 'filler') {
-                            // SLC 抢跑流
-                            const span = document.createElement('span');
-                            span.className = 'relay-slc';
-                            span.innerText = data.content;
-                            aiBody.appendChild(span);
-                        } else if (data.type === 'thought') {
-                            // 系统/逻辑思考中
-                            const thought = document.createElement('div');
-                            thought.className = 'chat-msg thought';
-                            thought.innerText = data.content;
-                            chatWindow.appendChild(thought);
-                        } else if (data.type === 'text') {
-                            // SLE 逻辑接力流
-                            if (!isRelaying) {
-                                isRelaying = true;
-                                const dot = document.createElement('span');
-                                dot.innerText = ' ... ';
-                                aiBody.appendChild(dot);
+                        try {
+                            const data = JSON.parse(dataStr);
+                            
+                            // 处理决策链路 (通常在最后一个 chunk)
+                            if (data.trace && Array.isArray(data.trace)) {
+                                const traceDiv = document.createElement('div');
+                                traceDiv.style.color = '#4ade80';
+                                traceDiv.style.fontSize = '0.7rem';
+                                traceDiv.style.fontFamily = 'monospace';
+                                traceDiv.style.marginBottom = '2px';
+                                traceDiv.style.fontStyle = 'italic';
+                                traceDiv.innerText = data.trace.join(' ➔ ');
+                                aiBody.prepend(traceDiv);
                             }
-                            const span = document.createElement('span');
-                            span.className = 'relay-sle';
-                            span.innerText = data.content;
-                            aiBody.appendChild(span);
-                        }
-                    } catch (e) {
+
+                            if (data.content) {
+                                const span = document.createElement('span');
+                                span.className = `relay-${data.type}`;
+                                span.innerText = data.content;
+                                aiBody.appendChild(span);
+                            }
+                        } catch (e) {
                         // 忽略非 JSON 行
                     }
                 }

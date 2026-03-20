@@ -88,6 +88,11 @@ export const TextChatPanel: React.FC<TextChatPanelProps> = ({
                       ? 'bg-cyan-500/10 border border-cyan-500/20 text-cyan-100 rounded-br-none' 
                       : 'bg-white/5 border border-white/10 text-white/80 rounded-bl-none'
                   }`}>
+                    {m.role === 'agent' && m.trace && m.trace.length > 0 && (
+                      <div className="text-[9px] font-mono text-green-400/80 mb-1 border-b border-green-500/10 pb-1 italic">
+                        {m.trace.join(' ➔ ')}
+                      </div>
+                    )}
                     {m.text}
                     {m.isTyping && <span className="inline-block w-1.5 h-3 bg-cyan-400/50 ml-1 animate-pulse" />}
                   </div>

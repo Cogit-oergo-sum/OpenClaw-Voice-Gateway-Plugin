@@ -1,0 +1,10 @@
+{"timestamp":1773915210671,"patch":{"mode":"session_start","metadata":{"text_input":"你好，Jarvis。"}},"callId":"global"}
+{"timestamp":1773915211227,"patch":{"mode":"session_start","metadata":{"text_input":"帮我查一下当前目录下的文件。"}},"callId":"global"}
+{"timestamp":1773915268601,"patch":{"mode":"session_start","metadata":{"text_input":"现在几点了？"}},"callId":"global"}
+{"timestamp":1773915270389,"patch":{"mode":"session_start","metadata":{"text_input":"帮我查一下 doc 目录下有哪些文件。"}},"callId":"global"}
+{"timestamp":1773915464560,"patch":{"mode":"session_start","metadata":{"text_input":"现在几点了？"}},"callId":"global"}
+{"timestamp":1773915466152,"patch":{"mode":"session_start","metadata":{"text_input":"帮我查一下 doc 目录下有哪些文件。"}},"callId":"global"}
+{"timestamp":1773916203883,"patch":{"mode":"session_start","metadata":{"text_input":"现在几点了？"}},"callId":"global"}
+{"timestamp":1773916205640,"patch":{"mode":"session_start","metadata":{"text_input":"帮我查一下 doc 目录下有哪些文件。"}},"callId":"global"}
+{"timestamp":1773916229882,"patch":{"mode":"session_start","metadata":{"text_input":"__IDLE_TRIGGER__"}},"callId":"global"}
+{"timestamp":1773916229896,"patch":{"mode":"session_start","metadata":{"text_input":"__INTERNAL_TRIGGER__"}},"callId":"global"}

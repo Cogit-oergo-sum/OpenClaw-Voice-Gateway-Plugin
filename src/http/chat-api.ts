@@ -48,7 +48,7 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
 
             let fullReply = "";
 
-            await fastAgent.process(messages, (chunk: FastAgentResponse) => {
+            await fastAgent.process(userText, (chunk: FastAgentResponse) => {
                 let openaiContent = "";
                 
                 switch(chunk.type) {
