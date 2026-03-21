@@ -46,29 +46,29 @@ graph TD
 *   **角色定位**：幕后的大脑，负责复杂逻辑推演、工具调用与多轮次 openClaw 交互。
 *   **模型选型**：高智力模型（如 qwen-plus）。
 *   **核心逻辑**：
-    *   [-] **画布生产**：将处理结果总结后写入 Canvas，标记 `READY` 状态。
-    *   **重要性评估**：判定当前进展是否足以“拍一拍”SLC 进行用户播报。输出 `Importance Score`。
-*   [-] **职责补充**：在工具调用和逻辑推演中引用 **“全局历史背景”**，避免做重复的确认或执行过时的指令。
-
+    *   **意图侦测 (IntentRouter, V3.3)**：前置路由组件，秒级判别是否需要调用外挂工具，或命中缓存免去多余查询。
+    *   **结果摘要 (ResultSummarizer, V3.1/V3.3)**：针对复杂工具返回值提取 `direct_response` 与 `extended_context`，只留精华。
+    *   **画布生产**：将总结信息写入 Canvas，标记 `READY` 状态，输出重要性分数 `Importance Score` 触发播报。
+    *   **ASR 隐形卫士 (V3.4)**：后台暗中甄别系统“同音词幻觉”，并静默执行纠错策略。
 
 #### **Canvas (核心画布: 状态中转站)**
-*   **角色定位**：系统的“黑板”，作为 SLC 和 SLE 之间的物理隔离层 and 数据总线。
-*   [-] **同步协议**：使用 `status: READY/PENDING` 机制解决读写竞态。只有标记为 `READY` 的单元才允许 SLC 读取。
+*   **角色定位**：系统的“黑板”，作为 SLC 和 SLE 之间的物理隔离层和数据总线，由 `CanvasManager (V3.3)` 统管。
+*   **读写机制**：依靠 `status: READY/PENDING` 与时间戳 (Version) 解决竞态，只有最新且 `READY` 的切片才允许消费。
 
+#### **Watchdog & Memory (调度进程与存储生态)**
+*   **Watchdog (守护进程)**：
+    *   **VAD 感知调度 & 心跳流转**：实时扫描 Canvas，在静音窗口推送 `__INTERNAL_TRIGGER__` 到 SLC 发起抢话。
+    *   **提示词管理 (PromptAssembler, V3.3)**：抽离一切指令逻辑并带有静态缓存。负责合成 Core Soul、Memory、Skill 及 Canvas 缝合逻辑。
+    *   **潜意识缝合 (Cognitive Filtering, V3.4)**：拦截硬编码的播报复读，转换为给 LLM 的“任务情报”，让其保持人设自行组织自然回复。
+*   **DialogueMemory & ShadowManager**：
+    *   **入站加载 & 出站同步**：入站时供给原始文本；出站前完成脏数据剥离并入库 WAL。
+    *   **去毒洗稿 (V3.4)**：应用 `aliasMap` 把历史上下文中的发音错别字静默洗稿，截断 ASR 幻觉传播。
 
-#### **Watchdog (守护进程: 调度中心)**
-*   **角色定位**：系统的协调者与维持者。
-*   **核心职责**：
-    *   **VAD 感知调度**：在用户不说话且 AI 获得发言权时，将 Canvas 更新推送给 SLC。
-    *   **提示词拼装服务**：负责实时拼装 SLC 和 SLE 的 System Prompt、User Prompt。基于 Core Soul、Memory、Skill 及 Canvas 状态动态重构。
-    *   **心跳与主动诱导 (Heartbeat & Internal Trigger)**：
-        *   [x] **心跳机制**：每 500ms 扫描一次 Canvas 状态。
-        *   [x] **Internal Trigger**：当 `status: READY` 且 VAD 为空闲时，若 SLC 未处于活跃对话，Watchdog 向 SLC 推送一个虚拟的 `__INTERNAL_TRIGGER__` 文本事件，诱导其开始消费画布数据并生成回复。
-    *   [x] **入站加载 (Inbound Injection)**：在语音通话建立（Call Session Start）时，从 `Global Memory` 提取最近 3-5 轮文本交互背景，注入 SLC/SLE 初始态。
+#### **Call & Network Infra (会话与网关)**
+*   **CallManager (V3.4)**：管理具体房间通话的生命周期与 ASR `aliasMap`。
+    *   **阶梯热词提权 (Adaptive Weighting)**：汇总错词纠偏记录，按 5->8->11 的权重梯队从底层重塑 ZEGO 收音能力。
+*   **Tunnel Watcher (V3.4.4)**：外挂扫描后台，监视内网穿透 URL 漂移，自动修复云端 API 回调终端。
 
-    *   [x] **出站同步 (Outbound Append)**：在每轮语音交互结束后的 `post_process` 阶段，剥离潜意识思考，将干净的语音对白实时同步到 `Global Memory`。
-    *   **全量时序对齐**：负责将语音 Trace 与 文本 History 按时间戳进行线性对齐并生成摘要。
-    
 #### **openClaw (专家助理)**
 *   **角色定位**：执行物理层复杂任务（读写文件、Shell 指令等），作为 SLE 的强力插件。
 
@@ -193,11 +193,14 @@ sequenceDiagram
     "current_progress": 1.0,
     "importance_score": 0.8,
     "is_delivered": false,
-    "summary": "闹钟已设好，明天 7 点。"
+    "summary": "【供降级直接播报的总述】",
+    "direct_response": "本次提问所需要的直接回答，需简洁",
+    "extended_context": "扩展内容，供后续深入提问时预备的背景信息"
   },
   "context": {
     "last_spoken_fragment": "刚才说到一半的是...",
-    "interrupted": false
+    "interrupted": false,
+    "is_busy": false
   }
 }
 ```
