@@ -54,6 +54,10 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                 switch(chunk.type) {
                     case 'filler':
                     case 'text':
+                    case 'chat':
+                    case 'internal':
+                    case 'idle':
+                    case 'waiting':
                         // 1. 基础清理: 移除 Markdown 符号及所有换行符（防止换行导致字幕被切割成多条消息）
                         openaiContent = chunk.content.replace(/[\*#>`~\n\r]/g, '');
                         // [V1.8.1] 移除强制换行逻辑，确保全量内容归拢在单条消息字幕中，解决部分 UI 下显示不完全的问题

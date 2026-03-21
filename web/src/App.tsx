@@ -15,8 +15,6 @@ function App() {
     hookText,
     pulseTrigger,
     isConnected,
-    agentVersion,
-    setAgentVersion,
     startCall,
     endCall,
     sendTestTTS,
@@ -46,8 +44,6 @@ function App() {
       <TextChatPanel 
         messages={messages} 
         onSendMessage={sendTextMessage}
-        agentVersion={agentVersion}
-        onVersionChange={setAgentVersion}
       />
 
       {/* Interaction Stage: Subtitles */}

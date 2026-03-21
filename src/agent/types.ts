@@ -20,6 +20,7 @@ export interface CanvasState {
         last_spoken_fragment: string;
         interrupted: boolean;
         last_interaction_time: number;
+        is_busy: boolean;
     };
 }
 

@@ -1,18 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
 import type { Message } from './SubtitleStream';
 
 interface TextChatPanelProps {
   messages: Message[];
   onSendMessage: (text: string) => void;
-  agentVersion: 'v2' | 'v3';
-  onVersionChange: (version: 'v2' | 'v3') => void;
 }
 
 export const TextChatPanel: React.FC<TextChatPanelProps> = ({ 
   messages, 
-  onSendMessage, 
-  agentVersion, 
-  onVersionChange 
+  onSendMessage
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -49,19 +52,8 @@ export const TextChatPanel: React.FC<TextChatPanelProps> = ({
           <div className="p-4 border-b border-white/5 flex items-center justify-between bg-white/5">
             <div className="flex items-center gap-3">
               <span className="text-[10px] font-mono tracking-widest text-cyan-400 uppercase">Text Console</span>
-              <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/5">
-                <button 
-                  onClick={() => onVersionChange('v2')}
-                  className={`px-2 py-1 text-[9px] rounded-md transition-all font-mono ${agentVersion === 'v2' ? 'bg-cyan-500/20 text-cyan-400' : 'text-white/30 hover:text-white/60'}`}
-                >
-                  V2
-                </button>
-                <button 
-                  onClick={() => onVersionChange('v3')}
-                  className={`px-2 py-1 text-[9px] rounded-md transition-all font-mono ${agentVersion === 'v3' ? 'bg-purple-500/20 text-purple-400' : 'text-white/30 hover:text-white/60'}`}
-                >
-                  V3
-                </button>
+              <div className="bg-purple-500/20 text-purple-400 px-2 py-1 text-[9px] rounded-md border border-purple-500/10 font-mono">
+                V3
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} className="text-white/30 hover:text-white/60">
@@ -93,11 +85,25 @@ export const TextChatPanel: React.FC<TextChatPanelProps> = ({
                         {m.trace.join(' ➔ ')}
                       </div>
                     )}
-                    {m.text}
+                    {m.fragments && m.fragments.length > 0 ? (
+                      m.fragments.map((frag, i) => (
+                        <span key={i} className={cn(
+                          frag.type === 'thought' ? "text-[10px] text-white/40 italic block border-l border-white/10 pl-2 my-1" :
+                          frag.type === 'waiting' ? "text-red-400 italic" :
+                          frag.type === 'idle' ? "text-pink-300" :
+                          frag.type === 'internal' ? "text-purple-400 font-bold" :
+                          "text-white/80"
+                        )}>
+                          {frag.text}
+                        </span>
+                      ))
+                    ) : (
+                      m.text
+                    )}
                     {m.isTyping && <span className="inline-block w-1.5 h-3 bg-cyan-400/50 ml-1 animate-pulse" />}
                   </div>
                   <span className="text-[8px] font-mono opacity-20 mt-1 uppercase">
-                    {m.role === 'user' ? 'System User' : `FastAgent ${agentVersion}`}
+                    {m.role === 'user' ? 'System User' : `FastAgent V3`}
                   </span>
                 </div>
               ))

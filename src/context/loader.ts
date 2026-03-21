@@ -7,14 +7,17 @@ import * as os from 'os';
  * 优先级: 传入配置 -> 环境变量 OPENCLAW_PROFILE -> 默认 ~/.openclaw/workspace/
  */
 export function resolveWorkspacePath(configProfilePath?: string): string {
+    // 优先级 1: 环境变量 OPENCLAW_PROFILE (标准 OpenClaw 指定)
+    if (process.env.OPENCLAW_PROFILE) {
+        return path.resolve(process.env.OPENCLAW_PROFILE);
+    }
+    // 优先级 2: 环境变量 OPENCLAW_WORKSPACE (旧版或自定义覆盖)
     if (process.env.OPENCLAW_WORKSPACE) {
         return path.resolve(process.env.OPENCLAW_WORKSPACE);
     }
+    // 优先级 3: 配置传入路径 (如 ./demo_workspace)
     if (configProfilePath) {
         return path.resolve(configProfilePath);
-    }
-    if (process.env.OPENCLAW_PROFILE) {
-        return path.resolve(process.env.OPENCLAW_PROFILE);
     }
     return path.join(os.homedir(), '.openclaw', 'workspace');
 }

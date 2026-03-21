@@ -7,10 +7,16 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export interface MessageFragment {
+  text: string;
+  type: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'agent';
   text: string;
+  fragments?: MessageFragment[];
   isInterrupted?: boolean;
   isTyping?: boolean;
   trace?: string[];

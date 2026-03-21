@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
 import { FastAgentResponse } from './types';
 import { PluginConfig } from '../types/config';
+import { PromptAssembler } from './prompt-assembler';
 import { ShadowManager } from './shadow-manager';
+import { getCurrentCallId } from '../context/ctx';
 
 /**
  * [V3.2.0] SLCEngine: 交互魂魄引擎
@@ -10,7 +12,7 @@ import { ShadowManager } from './shadow-manager';
 export class SLCEngine {
     private slcClient: OpenAI;
 
-    constructor(private config: PluginConfig) {
+    constructor(private config: PluginConfig, private promptAssembler: PromptAssembler) {
         this.slcClient = new OpenAI({
             apiKey: config.llm.apiKey,
             baseURL: config.fastAgent?.slcBaseUrl || config.llm.baseUrl
@@ -27,14 +29,18 @@ export class SLCEngine {
         shadowManager: ShadowManager,
         onChunk: (resp: FastAgentResponse) => void,
         signal: { interrupted: boolean; slcDone: boolean },
-        dialogueMessages: any[] = []
+        dialogueMessages: any[] = [],
+        isNewSession: boolean = false
     ): Promise<string> {
         let slcFullText = "";
         try {
             const isInternal = text === '__INTERNAL_TRIGGER__';
             const isIdle = text === '__IDLE_TRIGGER__';
             const isWaiting = text === '__TOOL_WAITING_TRIGGER__';
-            const slcPrompt = await shadowManager.assemblePrompt('SLC');
+
+            const callId = getCurrentCallId() || 'global';
+            const state = shadowManager.getOrCreateState(callId);
+            const slcPrompt = await this.promptAssembler.assemblePrompt('SLC', callId, state, isNewSession);
 
             const messages: any[] = [
                 { role: 'system', content: slcPrompt }
@@ -52,7 +58,7 @@ export class SLCEngine {
             } else if (isIdle) {
                 shadowThought = `(当前气氛有些安静。我应该优雅地打破沉默。我会结合上下文想一个自然的话题，或者询问用户是否需要继续刚才的任务。)`;
             } else if (isWaiting) {
-                shadowThought = `(这个事情正在调用工具处理: "${canvasSummary}"，需要等一下，我**不能瞎猜和乱编**，要让用户稍等一下)`;
+                shadowThought = `(这个事情还在处理中: "${canvasSummary}"，我不能给出答案，要让用户稍等一下)`;
             } else {
                 shadowThought = ``;
             }

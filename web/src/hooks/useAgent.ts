@@ -27,6 +27,8 @@ export function useAgent() {
   const roomId = useRef('');
   const publishedStreamId = useRef('');
   const localStreamRef = useRef<any>(null);
+  const targetAgentStreamId = useRef<string>('');
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const log = (msg: string) => console.log(`[useAgent] ${msg}`);
 
@@ -35,7 +37,8 @@ export function useAgent() {
   }, []);
 
   const startCall = async () => {
-    if (isConnected) return;
+    if (isConnected || isConnecting) return;
+    setIsConnecting(true);
 
     try {
       setHookText('REQUESTING ACCESS...');
@@ -52,6 +55,7 @@ export function useAgent() {
       const data = await res.json();
       currentControlToken.current = data.controlToken;
       roomId.current = data.roomId;
+      targetAgentStreamId.current = data.agentStreamId; // Store latest target
 
       if (!zgRef.current) {
         zgRef.current = new ZegoExpressEngine(1623602215, 'wss://webliveroom1623602215-api.zego.im/ws');
@@ -104,8 +108,8 @@ export function useAgent() {
           log(`roomStreamUpdate: ${updateType}, room: ${roomID}, streams: ${JSON.stringify(streamList)}`);
           if (updateType === 'ADD') {
             for (const stream of streamList) {
-              log(`Checking stream: ${stream.streamID}, target: ${data.agentStreamId}`);
-              if (stream.streamID === data.agentStreamId) {
+              log(`Checking stream: ${stream.streamID}, target: ${targetAgentStreamId.current}`);
+              if (stream.streamID === targetAgentStreamId.current) {
                 log('Found AI stream, starting playback...');
                 const remoteStream = await zgRef.current!.startPlayingStream(stream.streamID);
                 const audio = document.getElementById('remote-audio') as HTMLAudioElement;
@@ -140,6 +144,8 @@ export function useAgent() {
     } catch (e: any) {
       log('Connection failed: ' + e.message);
       setHookText('CONNECTION FAILED');
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -220,7 +226,6 @@ export function useAgent() {
     }
   };
 
-  const [agentVersion, setAgentVersion] = useState<'v2' | 'v3'>('v2');
   const textChatSessionId = useRef<string>(`text-chat-${Date.now()}`);
 
   // Proactive Notifications (SSE)
@@ -233,7 +238,7 @@ export function useAgent() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'notification' && data.content) {
+        if (['notification', 'internal', 'idle'].includes(data.type) && data.content) {
           log(`Received notification: ${data.content}`);
           setMessages(prev => [
             ...prev, 
@@ -241,6 +246,7 @@ export function useAgent() {
               id: 'notify-' + Date.now(), 
               role: 'agent', 
               text: data.content, 
+              fragments: [{ text: data.content, type: data.type }],
               isTyping: false,
               trace: data.trace
             }
@@ -263,7 +269,7 @@ export function useAgent() {
   }, [triggerPulse]);
 
   const sendTextMessage = async (text: string) => {
-    log(`Sending text message: ${text} (Version: ${agentVersion}, Session: ${textChatSessionId.current})`);
+    log(`Sending text message: ${text} (Version: v3, Session: ${textChatSessionId.current})`);
     
     // Add user message to UI
     const userMsgId = Date.now().toString();
@@ -278,7 +284,7 @@ export function useAgent() {
         },
         body: JSON.stringify({ 
           message: text, 
-          version: agentVersion,
+          version: 'v3',
           sessionId: textChatSessionId.current
         })
       });
@@ -291,7 +297,7 @@ export function useAgent() {
       let fullText = "";
 
       if (reader) {
-        setMessages(prev => [...prev, { id: agentMsgId, role: 'agent', text: '', isTyping: true }]);
+        setMessages(prev => [...prev, { id: agentMsgId, role: 'agent', text: '', fragments: [], isTyping: true }]);
         
         while (true) {
           const { done, value } = await reader.read();
@@ -307,7 +313,7 @@ export function useAgent() {
               
               try {
                 const data = JSON.parse(dataStr);
-                if (data.type === 'text' || data.type === 'filler') {
+                if (['text', 'filler', 'chat', 'internal', 'idle', 'waiting'].includes(data.type)) {
                   if (data.content) {
                     fullText += data.content;
                   }
@@ -315,9 +321,15 @@ export function useAgent() {
                     const updated = [...prev];
                     const idx = updated.findIndex(m => m.id === agentMsgId);
                     if (idx !== -1) {
+                      const newFragments = [...(updated[idx].fragments || [])];
+                      if (data.content) {
+                        newFragments.push({ text: data.content, type: data.type });
+                      }
+
                       updated[idx] = { 
                         ...updated[idx], 
                         text: fullText, 
+                        fragments: newFragments,
                         isTyping: !data.isFinal,
                         trace: data.trace || updated[idx].trace 
                       };
@@ -344,8 +356,6 @@ export function useAgent() {
     hookText,
     pulseTrigger,
     isConnected,
-    agentVersion,
-    setAgentVersion,
     startCall,
     endCall,
     sendTestTTS,

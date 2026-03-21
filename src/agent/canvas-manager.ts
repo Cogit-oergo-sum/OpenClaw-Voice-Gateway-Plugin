@@ -9,9 +9,11 @@ import { CanvasState } from './types';
 export class CanvasManager {
     private canvases: Map<string, CanvasState> = new Map();
     private logDir: string;
+    private snapshotPath: string;
 
     constructor(workspaceRoot: string) {
         this.logDir = path.join(workspaceRoot, 'logs');
+        this.snapshotPath = path.join(this.logDir, 'canvas_snapshot.json');
     }
 
     getCanvases(): Map<string, CanvasState> {
@@ -37,7 +39,8 @@ export class CanvasManager {
                 context: {
                     last_spoken_fragment: '',
                     interrupted: false,
-                    last_interaction_time: Date.now()
+                    last_interaction_time: Date.now(),
+                    is_busy: false
                 }
             };
             this.canvases.set(callId, canvas);
@@ -61,6 +64,10 @@ export class CanvasManager {
                 state: this.canvases.get(callId)
             };
             await fs.promises.appendFile(logPath, JSON.stringify(entry) + '\n');
+            
+            // [V3.4.0] 物理隔离：同步更新全量快照，确保状态持久性
+            await this.saveSnapshot();
+            
             console.log(`[CanvasLog][${callId}] ${event}: ${JSON.stringify(detail)}`);
         } catch (e) {
             console.error('[CanvasLog] Failed to log event:', e);
@@ -68,36 +75,61 @@ export class CanvasManager {
     }
 
     /**
-     * [V3.3.6] 磁盘同步：从审计日志中恢复最新的画布状态
-     * 解决外部系统（CLI, Timers）更新状态后，本进程内存不感知的问题
+     * [V3.4.0] 全量快照持久化：采用 Write-Full 策略
+     */
+    private async saveSnapshot() {
+        try {
+            const data = JSON.stringify(Object.fromEntries(this.canvases), null, 2);
+            await fs.promises.writeFile(this.snapshotPath, data, 'utf8');
+        } catch (e) {
+            console.error('[CanvasManager] Snapshot save failed:', e);
+        }
+    }
+
+    /**
+     * [V3.4.0] 磁盘同步：改为读取轻量级快照文件
+     * 彻底解决 JSONL 滚动导致的状态回滚（Double Broadcast Bug）
      */
     async syncCanvasesFromDisk() {
         try {
-            const logPath = path.join(this.logDir, 'canvas.jsonl');
-            if (!fs.existsSync(logPath)) return;
+            if (!fs.existsSync(this.snapshotPath)) return;
             
-            const content = await fs.promises.readFile(logPath, 'utf8');
-            const lines = content.trim().split('\n').slice(-100); // 仅扫描最近 100 条变动以平衡性能
+            const content = await fs.promises.readFile(this.snapshotPath, 'utf8');
+            const snapshot = JSON.parse(content);
             
-            for (const line of lines) {
-                try {
-                    const entry = JSON.parse(line);
-                    if (entry.callId && entry.state?.task_status && this.canvases.has(entry.callId)) {
-                        const canvas = this.canvases.get(entry.callId)!;
-                        if (entry.state.task_status.version >= canvas.task_status.version) {
-                           // 🚀 防止回滚：如果内存中已投递，不被磁盘的老状态覆盖为未投递
-                           const wasDelivered = canvas.task_status.is_delivered;
-                           if (canvas.task_status.status !== entry.state.task_status.status) {
-                               console.log(`[Watchdog] 🔄 Session ${entry.callId} state synced: ${canvas.task_status.status} -> ${entry.state.task_status.status}`);
-                           }
-                           Object.assign(canvas.task_status, entry.state.task_status);
-                           if (wasDelivered) canvas.task_status.is_delivered = true;
+            for (const [callId, diskState] of Object.entries(snapshot) as [string, any][]) {
+                if (this.canvases.has(callId)) {
+                    const canvas = this.canvases.get(callId)!;
+                    
+                    if (diskState.task_status?.version > canvas.task_status.version) {
+                        // 🚀 发现新版本：说明来自外部系统（如 CLI）的全新任务更新，直接全量同步
+                        Object.assign(canvas.task_status, diskState.task_status);
+                        Object.assign(canvas.env, diskState.env);
+                        Object.assign(canvas.context, diskState.context);
+                    } else if (diskState.task_status?.version === canvas.task_status.version) {
+                        // 🚀 相同版本：说明是细微状态变更（或来自落后快照的同步）
+                        // 核心防御：防止内存状态被过时的磁盘状态覆盖
+                        const wasDeliveredInMem = canvas.task_status.is_delivered;
+                        const wasBusyInMem = canvas.context.is_busy; 
+                        const lastInteractionTimeInMem = canvas.context.last_interaction_time;
+                        
+                        Object.assign(canvas.task_status, diskState.task_status);
+                        if (wasDeliveredInMem) canvas.task_status.is_delivered = true;
+                        
+                        Object.assign(canvas.env, diskState.env);
+                        Object.assign(canvas.context, diskState.context);
+                        if (wasBusyInMem) canvas.context.is_busy = true; 
+                        // [V3.4.2] 始终保留内存中更新的最后交互时间，防止快照回退导致心跳逻辑波动
+                        if (lastInteractionTimeInMem > (canvas.context.last_interaction_time || 0)) {
+                            canvas.context.last_interaction_time = lastInteractionTimeInMem;
                         }
                     }
-                } catch (e) {}
+                } else {
+                    this.canvases.set(callId, diskState);
+                }
             }
         } catch (e) {
-            console.error('[CanvasManager] Disk sync failed:', e);
+            console.error('[CanvasManager] Snapshot sync failed:', e);
         }
     }
 

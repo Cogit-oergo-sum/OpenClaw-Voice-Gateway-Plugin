@@ -1,0 +1,4 @@
+{"timestamp":"2026-03-20T10:20:04.647Z","callId":"test-call-1774002004644","role":"user","content":"Hello, this is a (thinking) test message."}
+{"timestamp":"2026-03-20T10:20:04.648Z","callId":"test-call-1774002004644","role":"assistant","content":"Hello! How [loading...] can I help you today?"}
+{"timestamp":"2026-03-20T10:20:17.900Z","callId":"test-call-1774002017899","role":"user","content":"Hello, this is a (thinking) test message."}
+{"timestamp":"2026-03-20T10:20:17.903Z","callId":"test-call-1774002017899","role":"assistant","content":"Hello! How [loading...] can I help you today?"}
