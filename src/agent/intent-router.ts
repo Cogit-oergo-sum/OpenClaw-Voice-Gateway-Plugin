@@ -29,7 +29,8 @@ export class IntentRouter {
                 model: sleModel,
                 messages: [
                     { role: 'system', content: INTENT_ROUTER_SYSTEM_PROMPT },
-                    ...messages.slice(-3), // 只看最近 3 轮上下文
+                    ...messages.slice(-3),
+                    { role: 'system', content: `[核心画布实时状态 (Canvas State)]\n${fullSoul.split('[核心画布实时状态 (Canvas State)]')[1] || ''}` },
                     { role: 'user', content: text }
                 ] as any,
                 response_format: { type: 'json_object' },

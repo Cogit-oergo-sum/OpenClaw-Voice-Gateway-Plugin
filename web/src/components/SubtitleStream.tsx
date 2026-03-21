@@ -31,7 +31,7 @@ export const SubtitleStream: React.FC<SubtitleStreamProps> = ({ messages }) => {
   const displayMessages = messages.slice(-4);
 
   return (
-    <div className="h-[35%] w-full p-6 flex flex-col justify-end pb-12 z-20 pointer-events-none subtitle-mask">
+    <div className="h-[60%] w-full p-6 flex flex-col justify-end pb-32 z-20 pointer-events-none subtitle-mask">
       <div className="flex flex-col gap-3 w-full justify-end min-h-full">
         <AnimatePresence initial={false}>
           {displayMessages.map((msg, index) => {

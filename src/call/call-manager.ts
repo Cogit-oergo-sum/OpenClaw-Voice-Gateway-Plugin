@@ -20,6 +20,7 @@ export interface CallState {
     // ASR 纠错与缓存
     dynamicHotwords: string[];
     aliasMap: Map<string, string>;
+    correctionCounts: Map<string, number>; // [V3.4.2] 统计纠错次数，用于阶梯式提权
 
     // 内存缓冲区 (延时落盘)
     conversationBuffer: Array<{ role: string; content: string }>;
@@ -109,6 +110,7 @@ export class CallManager {
             memoryMtime: 0,
             dynamicHotwords: [],
             aliasMap: new Map(),
+            correctionCounts: new Map(),
             conversationBuffer: []
         };
         this.activeCalls.set(userId, state);
@@ -133,6 +135,52 @@ export class CallManager {
 
     getCallState(userId: string): CallState | undefined {
         return this.activeCalls.get(userId);
+    }
+
+    /**
+     * [V3.4.0] ASR 纠错触发接口 (支持阶梯权重)
+     */
+    async updateAsrCorrection(userId: string, wrong: string, correct: string) {
+        const call = this.getCallState(userId);
+        if (!call) return;
+
+        // 1. 维护局部映射
+        call.aliasMap.set(wrong, correct);
+
+        // 2. [V3.4.2] 阶梯提权逻辑
+        const currentCount = (call.correctionCounts.get(correct) || 0) + 1;
+        call.correctionCounts.set(correct, currentCount);
+
+        if (!call.dynamicHotwords.includes(correct)) {
+            call.dynamicHotwords.push(correct);
+        }
+
+        console.log(`[CallManager][ASR] Correction Registered for ${userId}: "${wrong}" -> "${correct}" (Count: ${currentCount})`);
+
+        // 3. 汇总并根据纠错次数赋予权重
+        try {
+            const finalHotwords: Record<string, number> = {};
+            
+            // 汇总所有活跃通话的热词
+            for (const c of this.activeCalls.values()) {
+                for (const word of c.dynamicHotwords) {
+                    const count = c.correctionCounts.get(word) || 1;
+                    // 权重算法：1次=5(尝试), 2次=8(加强), 3次+=11(强制)
+                    let weight = 5;
+                    if (count === 2) weight = 8;
+                    else if (count >= 3) weight = 11;
+
+                    // 如果多个通话涉及同一个词，取最高权重
+                    finalHotwords[word] = Math.max(finalHotwords[word] || 0, weight);
+                }
+            }
+
+            if (Object.keys(finalHotwords).length > 0) {
+                await this.api.updateAgentHotwords(finalHotwords);
+            }
+        } catch (e) {
+            console.error(`[CallManager][ASR] Failed to sync dynamic hotwords to ZEGO`, e);
+        }
     }
 
     /**

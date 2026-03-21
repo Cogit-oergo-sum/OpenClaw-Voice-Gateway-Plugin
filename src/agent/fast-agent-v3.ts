@@ -13,6 +13,7 @@ import { IntentRouter } from './intent-router';
 import { ResultSummarizer } from './result-summarizer';
 import { PromptAssembler } from './prompt-assembler';
 import { ToolResultHandler } from './tool-result-handler';
+import { CallManager } from '../call/call-manager';
 import * as path from 'path';
 
 /**
@@ -35,7 +36,7 @@ export class FastAgentV3 implements IFastAgent {
     private instanceId: string = Math.random().toString(36).substring(7);
     private processedSessions: Set<string> = new Set();
     
-    constructor(private config: PluginConfig, private workspaceRoot: string) {
+    constructor(private config: PluginConfig, private workspaceRoot: string, private callManager?: CallManager) {
         this.dialogueMemory = new DialogueMemory(workspaceRoot);
         this.shadow = new ShadowManager(workspaceRoot);
         this.promptAssembler = new PromptAssembler(workspaceRoot, this.dialogueMemory);
@@ -44,7 +45,7 @@ export class FastAgentV3 implements IFastAgent {
         this.watchdog = new WatchdogService(this.canvasManager, this.instanceId, 500);
         this.slc = new SLCEngine(config, this.promptAssembler);
         this.resultSummarizer = new ResultSummarizer(config);
-        const toolResultHandler = new ToolResultHandler(this.executor, this.resultSummarizer);
+        const toolResultHandler = new ToolResultHandler(this.executor, this.resultSummarizer, callManager);
         this.sle = new SLEEngine(config, this.resultSummarizer, toolResultHandler);
         this.intentRouter = new IntentRouter(config);
 
@@ -194,8 +195,20 @@ export class FastAgentV3 implements IFastAgent {
             }
 
             // 🚀 [V3.3.9] SSOT 内存恢复：从影子管理器获取真正的对话历史
-            const managedMessages = await this.dialogueMemory.getHistoryMessages(callId, 10);
+            let managedMessages = await this.dialogueMemory.getHistoryMessages(callId, 10);
             
+            // 🚀 [V3.4.0] ASR 纠错洗稿：根据 aliasMap 替换历史记录中的错别字
+            const call = this.callManager?.getCallState(callId);
+            if (call && call.aliasMap.size > 0) {
+                managedMessages = managedMessages.map(m => {
+                    let content = m.content;
+                    for (const [wrong, correct] of call.aliasMap.entries()) {
+                        content = content.replace(new RegExp(wrong, 'g'), correct);
+                    }
+                    return { ...m, content };
+                });
+            }
+
             // 包装 onChunk，同步更新活跃时间（防止流式响应期间心跳超时）
             const wrappedOnChunk = (chunk: FastAgentResponse) => {
                 canvas.context.last_interaction_time = Date.now();
@@ -235,7 +248,7 @@ export class FastAgentV3 implements IFastAgent {
                 // A. 画布/心跳触发 -> 直接 SLC 播报
                 const step = text === '__IDLE_TRIGGER__' ? 'SLC (心跳)' : 'SLC (任务播报)';
                 trace.push(step);
-                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, canvas.task_status.summary, this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
+                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, canvas.task_status.direct_response || canvas.task_status.summary, this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
                 signal.slcDone = true;
             } else if (needsTool) {
                 // B. 任务模式 (Tool Mode) -> SLC 垫词 + SLE 并行执行
@@ -277,7 +290,7 @@ export class FastAgentV3 implements IFastAgent {
                 // C. 聊天模式 (Chat Mode) -> 仅 SLC 直接回复
                 console.log(`[FastAgentV3] Entering CHAT MODE...`);
                 trace.push('SLC (直接回复)');
-                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, "", this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
+                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, canvas.task_status.summary || canvas.task_status.extended_context || "", this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
                 signal.slcDone = true;
                 
                 // 为了保持 SLE 对话记忆，仍异步运行 SLE 但不推流
@@ -308,6 +321,8 @@ export class FastAgentV3 implements IFastAgent {
             if (canvas.task_status.is_delivered && canvas.task_status.summary) {
                 console.log(`[FastAgentV3][${callId}] 🧹 Consuming delivered summary to prevent context pollution.`);
                 canvas.task_status.summary = ""; 
+                canvas.task_status.direct_response = "";
+                // 注意：保持 extended_context 不清理，以便下一轮 IntentRouter 判定是否“命中缓存”
                 canvas.task_status.extracted_data = "";
                 await this.logCanvasEvent(callId, 'CANVAS_CONSUMED', { reason: 'pollution_prevention' });
             }

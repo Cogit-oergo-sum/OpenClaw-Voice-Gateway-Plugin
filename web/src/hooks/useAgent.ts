@@ -4,7 +4,7 @@ import type { AgentState } from '../components/FluidVoiceCore';
 import type { Message } from '../components/SubtitleStream';
 import type { WidgetData } from '../components/GlassWidget';
 
-const GATEWAY_URL = 'http://localhost:18790';
+const GATEWAY_URL = 'http://localhost:18795';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
 
 export function useAgent() {

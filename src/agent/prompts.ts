@@ -1,4 +1,16 @@
 /**
+ * TTS 友好协议 (TTS-Friendly Protocol)
+ * 职责：强制 AI 摒弃 Markdown 标签，输出适合语音播报的平铺文本
+ */
+export const TTS_FRIENDLY_PROTOCOL = `
+# 语音输出规范 (Voice Output Rules)
+- 严禁使用任何 Markdown 格式（如 **加粗**、### 标题、\`代码块\`、[链接](...) 等）。
+- 严禁输出列表符号（如 -, *, 1. 等），请使用自然语言（如“首先...其次...最后...”）进行描述。
+- 逻辑段落请直接使用换行或句号进行语法分割。
+- 所有的标点符号应仅限：。，？！（用于引导 TTS 的语调变化）。
+`;
+
+/**
  * [V3.3.0] Prompts 集中管理
  * 职责：分离硬编码的提示词，降低逻辑文件的维护成本
  */
@@ -8,6 +20,8 @@
  * 来源: sle.ts L41-L57 (提取逻辑块)
  */
 export const SLE_ACTION_PROTOCOL = `
+${TTS_FRIENDLY_PROTOCOL}
+
 # 虚拟触发指令 (Internal Trigger)
 - 如果当前输入是 "__INTERNAL_TRIGGER__"，表示后台任务刚刚出结果了。
 - 你必须查阅画布状态并根据实际数据进行客观分析。
@@ -24,6 +38,18 @@ export const SLE_ACTION_PROTOCOL = `
 `;
 
 /**
+ * [V3.4.0] ASR 纠错协议
+ * 职责：引导 SLE 识别 ASR 同音词幻觉并触发修复工具
+ */
+export const SLE_ASR_CORRECTION_PROTOCOL = `
+# ASR 纠错侦测 (ASR Error Detection)
+- 你的职责包括暗中观察 ASR 识别结果是否存在“同音错字”。
+- **识别机理**：当发现 ASR 输出的词汇（如“武松”）与前后文语义（如“冬天水挂在树上”）严重不符，且存在更合理的同音词（如“雾凇”）时。
+- **行动**：立即静默调用 \`correct_asr_hotword\` 工具，传入错误词和推断出的正确词。
+- **注意**：即使用户在对话中没有显式纠正，只要你根据常识判断识别有误，也要发起修复，确保护航下一轮对话的准确率。
+`;
+
+/**
  * 意图路由 prompt
  * 来源: sle.ts L233-L240
  */
@@ -31,10 +57,11 @@ export const INTENT_ROUTER_SYSTEM_PROMPT = `你是一个高效率的任务分流
 你的唯一任务是：判断用户的最新输入是否需要调用外部工具（文件操作、搜索、系统设置等）。
 
 # 判定规则
-1. 如果用户只是在进行闲聊、打招呼、查询当前时间、表达情绪或对已有的对话内容进行简单回应，则 needsTool = false（当前时间已在环境变量env中提供）。
-2. 如果用户明确要求“查一下、找一下、删掉、创建、查询天气、读文件”等需要外部动作的任务，则 needsTool = true。
-3. 你的输出必须是严格的 JSON 格式：{"needsTool": boolean, "intent": "简短任务描述"}。
-4. 严禁包含任何其他文字。`;
+1. 如果用户只是在进行闲聊、打招呼、查询当前时间、表达情绪或对已有的对话内容进行简单回应，则 needsTool = false。
+2. 如果用户明确要求“查一下、找一下、删掉、创建、查询天气、读文件”等任务，则 needsTool = true。
+3. **关键准则 (命中缓存)**：如果用户需求的答案已经在提供的 [核心画布实时状态] 的任务状态 (task_status) 中的 summary 或 extended_context 中完整呈现（且无需更新），则 needsTool = false。
+4. 你的输出必须是严格的 JSON 格式：{"needsTool": boolean, "intent": "简短任务描述"}。
+5. 严禁包含任何其他文字。`;
 
 /**
  * 会话初始化 prompt
@@ -62,9 +89,10 @@ export const PERSONA_SYNTHESIZER_PROMPT = `# 角色
 1. **去系统化与拟人化**：绝对不要在最终输出中保留任何代码片段、JSON格式、"metadata"、"task_id" 等系统日志感的内容。必须将这些信息翻译为角色的“内心状态”、“当前处境”或“潜意识”。
    - *反面示例*：“当前任务：帮用户查天气，进度：初始”。
    - *正面示例*：“你现在正准备帮用户查看天气，心情有些期待”。
-2. **灵魂与人设（Soul & Identity）**：提取最核心的性格特征、说话口癖、价值观和不可触碰的底线。忽略冗长且在当前对话中用不到的背景故事。
-3. **羁绊与记忆（User, Memory & History）**：将用户画像和长短期记忆浓缩为“你与用户的关系现状”。只保留对当前互动有决定性影响的核心事件（如：救命之恩、重大分歧、特有的昵称等），忽略琐碎的日常闲聊。
-4. **影子状态处理（Shadow State）**：将当前的模式（Mode）和进度描述（Progress）转化为角色的“当前场景与短期目标”。
+2. **拒绝 Markdown 与列表**：这是一份用于驱动语音对话的提示词。严禁生成包含 Markdown 标签（如 **加粗**）或列表符号（如 -、*、1.）的内容。如果需要列举，请使用自然语言衔接。
+3. **灵魂与人设（Soul & Identity）**：提取最核心的性格特征、说话口癖、价值观和不可触碰的底线。忽略冗长且在当前对话中用不到的背景故事。
+4. **羁绊与记忆（User, Memory & History）**：将用户画像和长短期记忆浓缩为“你与用户的关系现状”。只保留对当前互动有决定性影响的核心事件（如：救命之恩、重大分歧、特有的昵称等），忽略琐碎的日常闲聊。
+5. **影子状态处理（Shadow State）**：将当前的模式（Mode）和进度描述（Progress）转化为角色的“当前场景与短期目标”。
 
 # 目标输出格式（请直接输出此格式的内容，作为最终的 System Prompt）
 
@@ -99,6 +127,8 @@ export function TASK_RESULT_SUMMARIZER_PROMPT(intent: string, output: string): s
     return `# 角色
 你是一个精准的信息提炼专家，擅长从冗长、复杂的系统日志或上下文中，过滤出对用户真正有价值的信息。
 
+${TTS_FRIENDLY_PROTOCOL}
+
 # 任务
 请根据【用户的提问】，在【待处理的复杂内容】中提取并整合信息。你的目标是：只保留与当前问题紧密相关的直接答案，以及用户大概率会继续追问的关联信息，并过滤掉所有无关的系统噪音。
 
@@ -109,16 +139,22 @@ export function TASK_RESULT_SUMMARIZER_PROMPT(intent: string, output: string): s
 4. **【特殊情况：异常处理】**：如果内容中含有报错信息，必须在结果中明确标注“⚠️ 任务执行出现报错”，并简述原因。
 
 # 输出格式
-简洁清晰。如果失败，失败原因置于最顶部。
+必须输出严格的 JSON 格式（严禁包含其他文字）：
+{
+  "direct_response": "本次提问所需要的直接回答，需简洁、适合语音播报，严禁 Markdown",
+  "extended_context": "扩展内容，供用户在后续深入提问时提前预备的背景信息"
+}
 
 ---
 **输入示例：**
 - 用户的提问：今天天气咋样？
-- 待处理的复杂内容：[2024-05-20 08:00:00] 任务开始... 任务执行步骤1... 成功获取今天天气：晴，25度... 成功获取明天天气：多云，22度... 任务耗时 1.2s... 任务执行结果：成功...
+- 待处理的复杂内容：...成功获取今天天气：晴，25度... 成功获取明天天气：多云，22度... 
 
 **输出示例：**
-今天天气晴，25度。
-（补充信息：明天多云，22度）
+{
+  "direct_response": "今天天气晴，25度。",
+  "extended_context": "由于明天是多云转晴，温度会降低到22度左右，如果您明天打算外出，可以考虑带件薄外套。"
+}
 ---
 
 ---
@@ -129,16 +165,25 @@ export function TASK_RESULT_SUMMARIZER_PROMPT(intent: string, output: string): s
 }
 
 /**
- * 潜意识生成逻辑
- * 来源: slc.ts L50-L57
+ * [V3.4.4] ASR 纠错情报模版 (用于引导 AI 通过潜意识说人话)
+ */
+export function ASR_CORRECTION_DIRECTIVE_TEMPLATE(wrong: string, correct: string): string {
+    return `[ASR 纠错情报]：你刚才将用户说的“${wrong}”误听成了“${correct}”。目前系统已加强了该词的识别。请在接下来的回复中，用你 natural 的身份顺便告诉用户你刚才听错了，并且你现在已经记住了正确的词。不要机械复述此情报，要像真人一样流露。`;
+}
+
+/**
+ * [V3.3.0] 潜意识 (Shadow Thought) 生成逻辑
+ * 职责：缝合画布状态到回复前缀中
  */
 export function buildShadowThought(type: 'internal' | 'idle' | 'waiting' | 'chat', canvasSummary: string): string {
     if (type === 'internal') {
-        return `(用户交代的任务已完成，结果: "${canvasSummary}"，让我告知结果)`;
+        return `(后台任务状态已更新: "${canvasSummary}"。注意：不要像机器人一样复述，请以自然的人格化语气告知或顺便提起，如果对话已经转向，则可以简略说明。)`;
     } else if (type === 'idle') {
-        return `(当前气氛有些安静。我应该优雅地打破沉默。我会结合上下文想一个自然的话题，或者询问用户是否需要继续刚才的任务。)`;
+        return `(当前气氛有些安静。我应该优雅地打破沉默。我会结合上下文记录，主动寻找一个自然的话题，或询问用户是否需要继续刚才的任务。)`;
     } else if (type === 'waiting') {
-        return `(这个事情正在调用工具处理: "${canvasSummary}"，需要等一下，我**不能瞎猜和乱编**，要让用户稍等一下)`;
+        return `(任务正在处理中: "${canvasSummary}"。不要解释技术细节，只需要通过你的角色语气让用户稍微等一下，保持耐心和礼貌。)`;
+    } else if (type === 'chat' && canvasSummary) {
+        return `(系统提示：当前画布存有相关背景信息: "${canvasSummary}"。如果用户的问题与之相关，请结合这些信息直接回复，无需再次查阅。)`;
     }
     return '';
 }

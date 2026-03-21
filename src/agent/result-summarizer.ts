@@ -45,7 +45,7 @@ export class ResultSummarizer {
      * summarizeTaskResult: 任务结果摘要
      * 将工具运行的原始 stdout/stderr 提炼为可读性强的摘要。
      */
-    async summarizeTaskResult(rawOutput: string, intent: string): Promise<string> {
+    async summarizeTaskResult(rawOutput: string, intent: string): Promise<{ direct_response: string; extended_context: string }> {
         const safeIntent = (intent || "处理任务").substring(0, 100);
         const safeOutput = (rawOutput || "任务执行完毕，未获取到结果详细。").trim();
 
@@ -56,20 +56,28 @@ export class ResultSummarizer {
                     role: 'system', 
                     content: TASK_RESULT_SUMMARIZER_PROMPT(safeIntent, safeOutput.substring(0, 3000)) 
                 }] as any,
+                response_format: { type: 'json_object' },
                 temperature: 0.1,
-                max_tokens: 300
+                max_tokens: 500
             });
 
             const content = resp.choices[0]?.message?.content;
             if (content && content.trim()) {
-                return content.trim();
+                const parsed = JSON.parse(content);
+                return {
+                    direct_response: parsed.direct_response || "任务已完成。",
+                    extended_context: parsed.extended_context || ""
+                };
             }
             throw new Error("LLM returned empty summary");
         } catch (e) {
             console.error(`[ResultSummarizer summarizeTaskResult Exception]`, e);
             const isError = safeOutput.match(/error|fail|failed|错误|失败/i);
             const prefix = isError ? "⚠️ 任务结果汇报：" : "✅ 任务结果汇报：";
-            return `${prefix}${safeOutput.substring(0, 100)}${safeOutput.length > 100 ? '...' : ''}`;
+            return {
+                direct_response: `${prefix}${safeOutput.substring(0, 100)}`,
+                extended_context: ""
+            };
         }
     }
 }

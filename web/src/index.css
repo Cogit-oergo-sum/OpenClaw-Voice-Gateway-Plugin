@@ -121,6 +121,6 @@ body {
 }
 
 .subtitle-mask {
-  mask-image: linear-gradient(to top, black 60%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to top, black 50%, transparent 100%);
+  mask-image: linear-gradient(to top, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 85%, transparent 100%);
 }

@@ -16,6 +16,7 @@ export class ZegoApiClient {
     private appId: number;
     private serverSecret: string;
     private agentId: string = 'openclaw_voice_agent_v9';
+    private lastAgentParams?: RegisterAgentParams;
 
     constructor(config: ZegoConfig = {} as any) {
         this.baseUrl = config?.aiAgentBaseUrl || process.env.ZEGO_AI_AGENT_BASE_URL || 'https://aigc-aiagent-api.zegotech.cn';
@@ -98,6 +99,7 @@ export class ZegoApiClient {
         }
 
         await this.post('RegisterAgent', payload);
+        this.lastAgentParams = params;
         console.log(`[ZegoApiClient] Agent registered: ${this.agentId}`);
     }
 
@@ -133,7 +135,35 @@ export class ZegoApiClient {
         }
 
         await this.post('UpdateAgent', payload);
+        this.lastAgentParams = params;
         console.log(`[ZegoApiClient] Agent updated: ${this.agentId}`);
+    }
+
+    /**
+     * [V3.4.0] 快捷更新 ASR 动态热词
+     * 支持传入带权重的热词字典
+     */
+    async updateAgentHotwords(hotwordsWithWeights: Record<string, number>): Promise<void> {
+        if (!this.lastAgentParams) {
+            console.warn('[ZegoApiClient] No lastAgentParams found, skipping hotwords update.');
+            return;
+        }
+
+        const params = { ...this.lastAgentParams };
+        if (!params.asr) {
+            params.asr = { vendor: 'Common', params: {} };
+        } else {
+            params.asr = { ...params.asr, params: { ...(params.asr.params || {}) } };
+        }
+
+        // 根据权重生成热词字符串 (ZEGO Params 规范: "word1:weight1,word2:weight2")
+        const asrParams = params.asr.params!; 
+        asrParams['hotwords'] = Object.entries(hotwordsWithWeights)
+            .map(([word, weight]) => `${word}:${weight}`)
+            .join(',');
+
+        console.log(`[ZegoApiClient] Updating ASR hotwords with weights: ${asrParams['hotwords']}`);
+        await this.updateAgent(params);
     }
 
     /**

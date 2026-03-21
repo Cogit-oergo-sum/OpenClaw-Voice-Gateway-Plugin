@@ -5,6 +5,7 @@ import { FastAgentResponse } from './types';
 import { TextCleaner } from '../utils/text-cleaner';
 import { ResultSummarizer } from './result-summarizer';
 import { ToolResultHandler } from './tool-result-handler';
+import { SLE_ACTION_PROTOCOL, SLE_ASR_CORRECTION_PROTOCOL } from './prompts';
 
 /**
  * [V3.3.0] SLEEngine: 逻辑魂魄引擎 (已瘦身)
@@ -46,19 +47,8 @@ export class SLEEngine {
                     role: 'system', content: `
 ${fullSoul}
 
-# 虚拟触发指令 (Internal Trigger)
-- 如果当前输入是 "__INTERNAL_TRIGGER__"，表示后台任务刚刚出结果了。
-- 你必须查阅画布状态并根据实际数据进行客观分析。
-- 严禁在此模式下产生任何自然语言推流。
-
-# 行动指令 (Action Protocol)
-- 当用户提到“查看、查找、搜索、发邮件、读文件、删除文件”时，你必须立即调用 \`delegate_openclaw\` 工具。
-- 不要解释，直接执行工具。
-- 任务执行结果会自动由系统摘要并由管家汇报，你只需要开启任务或提炼数据即可。
-
-# 严禁幻觉 (No Hallucination)
-- 如果工具调用返回结果为空或报错，你必须在画布中真实记录原因。
-- 严禁捏造事实或列举不存在的结果。
+${SLE_ACTION_PROTOCOL}
+${SLE_ASR_CORRECTION_PROTOCOL}
 ` },
                 ...messages.slice(0, -1),
                 { role: 'user', content: text },
@@ -78,6 +68,21 @@ ${fullSoul}
                             parameters: {
                                 type: 'object',
                                 properties: { intent: { type: 'string', description: '委派意图' } }
+                            }
+                        }
+                    },
+                    {
+                        type: 'function',
+                        function: {
+                            name: 'correct_asr_hotword',
+                            description: '纠正 ASR 识别出的错误同音词并将其推入热词权重，防止死循环幻觉。',
+                            parameters: {
+                                type: 'object',
+                                properties: {
+                                    wrong: { type: 'string', description: 'ASR 听错的原始错别词（同音词）' },
+                                    correct: { type: 'string', description: '推论出的正确表达（真词）' }
+                                },
+                                required: ['wrong', 'correct']
                             }
                         }
                     }

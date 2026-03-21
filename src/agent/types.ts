@@ -14,6 +14,8 @@ export interface CanvasState {
         importance_score: number;
         is_delivered: boolean;
         summary: string;
+        direct_response?: string;
+        extended_context?: string;
         extracted_data?: string;
     };
     context: {

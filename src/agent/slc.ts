@@ -4,6 +4,7 @@ import { PluginConfig } from '../types/config';
 import { PromptAssembler } from './prompt-assembler';
 import { ShadowManager } from './shadow-manager';
 import { getCurrentCallId } from '../context/ctx';
+import { buildShadowThought } from './prompts';
 
 /**
  * [V3.2.0] SLCEngine: 交互魂魄引擎
@@ -54,13 +55,13 @@ export class SLCEngine {
             // 统一缝合逻辑：将画布状态与引导词注入潜意识
             let shadowThought = "";
             if (isInternal) {
-                shadowThought = `(用户交代的任务已完成，结果: "${canvasSummary}"，让我告知结果)`;
+                shadowThought = buildShadowThought('internal', canvasSummary);
             } else if (isIdle) {
-                shadowThought = `(当前气氛有些安静。我应该优雅地打破沉默。我会结合上下文想一个自然的话题，或者询问用户是否需要继续刚才的任务。)`;
+                shadowThought = buildShadowThought('idle', canvasSummary);
             } else if (isWaiting) {
-                shadowThought = `(这个事情还在处理中: "${canvasSummary}"，我不能给出答案，要让用户稍等一下)`;
-            } else {
-                shadowThought = ``;
+                shadowThought = buildShadowThought('waiting', canvasSummary);
+            } else if (canvasSummary) {
+                shadowThought = buildShadowThought('chat', canvasSummary);
             }
 
             // [BUGFIX] 修复冗余 User 消息导致的上下文污染
