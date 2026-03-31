@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CanvasState } from './types';
+import { CanvasStorage } from './canvas-storage';
 
 /**
- * [V3.2.0] CanvasManager: 核心画布管理器
- * 负责状态内存存储、审计日志记录、磁盘状态同步
+ * [V3.6.0] CanvasManager: 核心画布管理器 (Slim)
  */
 export class CanvasManager {
     private canvases: Map<string, CanvasState> = new Map();
@@ -16,151 +16,128 @@ export class CanvasManager {
         this.snapshotPath = path.join(this.logDir, 'canvas_snapshot.json');
     }
 
-    getCanvases(): Map<string, CanvasState> {
-        return this.canvases;
-    }
-
     getCanvas(callId: string): CanvasState {
         if (!this.canvases.has(callId)) {
-            const canvas: CanvasState = {
-                env: { 
-                    time: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }), 
-                    weather: 'Unknown' 
-                },
-                task_status: {
-                    status: 'PENDING',
-                    version: Date.now(),
-                    current_progress: 0,
-                    importance_score: 0,
-                    is_delivered: false,
-                    summary: '',
-                    extracted_data: ''
-                },
-                context: {
-                    last_spoken_fragment: '',
-                    interrupted: false,
-                    last_interaction_time: Date.now(),
-                    is_busy: false
-                }
-            };
-            this.canvases.set(callId, canvas);
-            this.logCanvasEvent(callId, 'CANVAS_INIT', {});
+            this.canvases.set(callId, {
+                env: { time: '', weather: 'Unknown' },
+                task_status: { status: 'PENDING', taskId: '', version: Date.now(), current_progress: 0, importance_score: 0, is_delivered: false, summary: '' },
+                context: { last_spoken_fragment: '', interrupted: false, last_interaction_time: Date.now(), is_busy: false, idle_trigger_count: 0 }
+            });
         }
         return this.canvases.get(callId)!;
     }
 
-    /**
-     * [V3.1.6] Canvas 审计日志：记录状态机所有流转轨迹
-     */
-    async logCanvasEvent(callId: string, event: string, detail: any) {
+    logCanvasEvent(callId: string, event: string, detail: any) {
         try {
             if (!fs.existsSync(this.logDir)) fs.mkdirSync(this.logDir, { recursive: true });
+            const entry = { timestamp: new Date().toISOString(), callId, event, detail, state: this.canvases.get(callId) };
             const logPath = path.join(this.logDir, 'canvas.jsonl');
-            const entry = {
-                timestamp: new Date().toISOString(),
-                callId,
-                event,
-                detail,
-                state: this.canvases.get(callId)
-            };
-            await fs.promises.appendFile(logPath, JSON.stringify(entry) + '\n');
-            
-            // [V3.4.0] 物理隔离：同步更新全量快照，确保状态持久性
-            await this.saveSnapshot();
-            
-            console.log(`[CanvasLog][${callId}] ${event}: ${JSON.stringify(detail)}`);
-        } catch (e) {
-            console.error('[CanvasLog] Failed to log event:', e);
-        }
+            fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', 'utf8');
+            CanvasStorage.saveSnapshot(this.snapshotPath, this.canvases).catch(() => {});
+        } catch (e) { console.error(`[CanvasManager] Failed to log event:`, e); }
     }
 
-    /**
-     * [V3.4.0] 全量快照持久化：采用 Write-Full 策略
-     */
-    private async saveSnapshot() {
-        try {
-            const data = JSON.stringify(Object.fromEntries(this.canvases), null, 2);
-            await fs.promises.writeFile(this.snapshotPath, data, 'utf8');
-        } catch (e) {
-            console.error('[CanvasManager] Snapshot save failed:', e);
-        }
-    }
-
-    /**
-     * [V3.4.0] 磁盘同步：改为读取轻量级快照文件
-     * 彻底解决 JSONL 滚动导致的状态回滚（Double Broadcast Bug）
-     */
     async syncCanvasesFromDisk() {
-        try {
-            if (!fs.existsSync(this.snapshotPath)) return;
-            
-            const content = await fs.promises.readFile(this.snapshotPath, 'utf8');
-            const snapshot = JSON.parse(content);
-            
-            for (const [callId, diskState] of Object.entries(snapshot) as [string, any][]) {
-                if (this.canvases.has(callId)) {
-                    const canvas = this.canvases.get(callId)!;
-                    
-                    if (diskState.task_status?.version > canvas.task_status.version) {
-                        // 🚀 发现新版本：说明来自外部系统（如 CLI）的全新任务更新，直接全量同步
-                        Object.assign(canvas.task_status, diskState.task_status);
-                        Object.assign(canvas.env, diskState.env);
-                        Object.assign(canvas.context, diskState.context);
-                    } else if (diskState.task_status?.version === canvas.task_status.version) {
-                        // 🚀 相同版本：说明是细微状态变更（或来自落后快照的同步）
-                        // 核心防御：防止内存状态被过时的磁盘状态覆盖
-                        const wasDeliveredInMem = canvas.task_status.is_delivered;
-                        const wasBusyInMem = canvas.context.is_busy; 
-                        const lastInteractionTimeInMem = canvas.context.last_interaction_time;
-                        
-                        Object.assign(canvas.task_status, diskState.task_status);
-                        if (wasDeliveredInMem) canvas.task_status.is_delivered = true;
-                        
-                        Object.assign(canvas.env, diskState.env);
-                        Object.assign(canvas.context, diskState.context);
-                        if (wasBusyInMem) canvas.context.is_busy = true; 
-                        // [V3.4.2] 始终保留内存中更新的最后交互时间，防止快照回退导致心跳逻辑波动
-                        if (lastInteractionTimeInMem > (canvas.context.last_interaction_time || 0)) {
-                            canvas.context.last_interaction_time = lastInteractionTimeInMem;
-                        }
-                    }
-                } else {
-                    this.canvases.set(callId, diskState);
-                }
-            }
-        } catch (e) {
-            console.error('[CanvasManager] Snapshot sync failed:', e);
+        await CanvasStorage.syncFromDisk(this.snapshotPath, this.canvases);
+    }
+
+    async getCanvasEvents(callId: string): Promise<any[]> {
+        return CanvasStorage.getEvents(this.logDir, callId);
+    }
+
+    async appendCanvasAudit(callId: string, summary: any, status: 'READY' | 'PENDING' | 'COMPLETED' | 'FAILED' = 'READY', is_delivered: boolean = false, taskId?: string) {
+        const canvas = this.getCanvas(callId);
+        
+        // [V3.6.21] 任务有效性校验：若传入 taskId，必须与当前活跃 taskId 一致，否则判定为“过时状态”丢弃，防止结果 clobber
+        if (taskId && canvas.task_status.taskId && taskId !== canvas.task_status.taskId) {
+            console.warn(`[CanvasManager][${callId}] ⚠️ Attempted clobber detected. Task ${taskId} is no longer active. Current: ${canvas.task_status.taskId}`);
+            return;
         }
+
+        if (typeof summary === 'string') {
+            canvas.task_status.summary = summary;
+            canvas.task_status.direct_response = summary;
+        } else {
+            canvas.task_status.direct_response = summary.direct_response;
+            canvas.task_status.extended_context = summary.extended_context;
+            canvas.task_status.summary = `${summary.direct_response}\n${summary.extended_context}`;
+            
+            // [V3.6.4] 职责下放：如果摘要携带了状态判定，则以此为准
+            if (summary.status) {
+                status = summary.status;
+            }
+            if (typeof summary.importance_score === 'number' && summary.importance_score > 0) {
+                canvas.task_status.importance_score = summary.importance_score;
+            }
+        }
+        canvas.task_status.status = status;
+        canvas.task_status.version = Date.now();
+        canvas.task_status.is_delivered = is_delivered;
+        // [V3.6.25] 权重归一化：READY/COMPLETED 结果默认权重提升至 5.0，确保至少能触发 Watchdog 默认播报
+        if (!canvas.task_status.importance_score || canvas.task_status.importance_score === 0) {
+            canvas.task_status.importance_score = (status === 'READY' || status === 'COMPLETED') ? 5.0 : 1.0;
+        }
+        
+        // 更新日志事件，重命名 legacyRecovery 为更清晰的 READY
+        const eventName = (status === 'READY' || status === 'COMPLETED') ? 'CANVAS_READY' : 'CANVAS_PROGRESS_SYNC';
+        await this.logCanvasEvent(callId, eventName, { summary });
+    }
+
+    async markAsDelivered(callId: string) {
+        const canvas = this.getCanvas(callId);
+        canvas.task_status.is_delivered = true;
+        canvas.task_status.version = Date.now(); 
+        await this.logCanvasEvent(callId, 'CANVAS_DELIVERY_CONFIRMED', { summary: canvas.task_status.summary });
     }
 
     /**
-     * [V3.3.7] 获取特定会话的所有审计日志事件
+     * [V3.6.8] 持久化会话上下文，确保交互时间等内存状态被写回快照
      */
-    async getCanvasEvents(callId: string): Promise<any[]> {
-        try {
-            const logPath = path.join(this.logDir, 'canvas.jsonl');
-            if (!fs.existsSync(logPath)) return [];
-            
-            const content = await fs.promises.readFile(logPath, 'utf8');
-            const lines = content.trim().split('\n');
-            const events: any[] = [];
-            
-            for (const line of lines) {
-                try {
-                    const entry = JSON.parse(line);
-                    if (entry.callId === callId) {
-                        events.push(entry);
-                    }
-                } catch (e) {}
-            }
-            return events;
-        } catch (e) {
-            console.error('[CanvasManager] Failed to read events:', e);
-            return [];
-        }
+    async persistContext(callId: string) {
+        const canvas = this.getCanvas(callId);
+        canvas.task_status.version = Date.now(); // 递增版本号，确保磁盘同步时不会被由于版本相同而判定为过期，从而保护内存中的交互时间
+        await CanvasStorage.saveSnapshot(this.snapshotPath, this.canvases);
     }
 
-    clear() {
-        this.canvases.clear();
+    /**
+     * [V3.6.2] 同步环境上下文 (Time/Weather)
+     */
+    syncEnvContext(callId: string) {
+        const canvas = this.getCanvas(callId);
+        canvas.env.time = new Date().toLocaleString('zh-CN', { hour12: false });
+        // 此处可扩展天气、位置等实时数据同步
     }
+
+    getCanvases() { return this.canvases; }
+    
+    /**
+     * [V3.6.4] 重置内存中的任务状态，防止旧任务污染新对话
+     */
+    resetTaskStatus(callId: string): string {
+        const canvas = this.getCanvas(callId);
+        const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        canvas.task_status = {
+            taskId,
+            status: 'PENDING',
+            version: Date.now(),
+            current_progress: 0,
+            importance_score: 0,
+            is_delivered: false,
+            summary: '',
+            direct_response: '',
+            extended_context: ''
+        };
+        console.log(`[CanvasManager][${callId}] 🧹 Memory state purified. New TaskId: ${taskId}`);
+        return taskId;
+    }
+
+    removeCanvas(callId: string) {
+        this.canvases.delete(callId);
+    }
+
+    async persistAll() {
+        await CanvasStorage.saveSnapshot(this.snapshotPath, this.canvases);
+    }
+
+    clear() { this.canvases.clear(); }
 }

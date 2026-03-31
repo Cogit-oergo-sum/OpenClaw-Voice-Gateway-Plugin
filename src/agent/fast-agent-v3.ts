@@ -2,7 +2,7 @@ import { ShadowManager } from './shadow-manager';
 import { DialogueMemory } from './dialogue-memory';
 import { PluginConfig } from '../types/config';
 import { getCurrentCallId } from '../context/ctx';
-import { FastAgentResponse, IFastAgent, CanvasState } from './types';
+import { FastAgentResponse, IFastAgent } from './types';
 import { CanvasManager } from './canvas-manager';
 import { DelegateExecutor } from './executor';
 import { TextCleaner } from '../utils/text-cleaner';
@@ -13,326 +13,223 @@ import { IntentRouter } from './intent-router';
 import { ResultSummarizer } from './result-summarizer';
 import { PromptAssembler } from './prompt-assembler';
 import { ToolResultHandler } from './tool-result-handler';
+import { AgentOrchestrator } from './agent-orchestrator';
 import { CallManager } from '../call/call-manager';
-import * as path from 'path';
+import { SkillRegistry } from './skills';
 
 /**
- * [V3.4.0] FastAgentV3: 终极 Facade 调度中枢
- * 采用原子化解耦架构，仅负责核心流程编排。
+ * [V3.6.0] FastAgentV3: 终极 Facade 调度中枢
+ * 通过 AgentOrchestrator 实现原子化解耦流程。
  */
 export class FastAgentV3 implements IFastAgent {
     private shadow: ShadowManager;
     private dialogueMemory: DialogueMemory;
     private canvasManager: CanvasManager;
-    private executor: DelegateExecutor;
     private watchdog: WatchdogService;
     private slc: SLCEngine;
     private sle: SLEEngine;
     private intentRouter: IntentRouter;
     private resultSummarizer: ResultSummarizer;
     private promptAssembler: PromptAssembler;
+    private orchestrator: AgentOrchestrator;
+    private executor: DelegateExecutor;
+    private registry: SkillRegistry;
     
     private compactPersona: string = "你是 Jarvis。用户是 先生。";
     private instanceId: string = Math.random().toString(36).substring(7);
     private processedSessions: Set<string> = new Set();
+    private announcingSessions: Set<string> = new Set();
+    private personaInitPromise: Promise<void> | null = null;
     
     constructor(private config: PluginConfig, private workspaceRoot: string, private callManager?: CallManager) {
         this.dialogueMemory = new DialogueMemory(workspaceRoot);
         this.shadow = new ShadowManager(workspaceRoot);
-        this.promptAssembler = new PromptAssembler(workspaceRoot, this.dialogueMemory);
         this.canvasManager = new CanvasManager(workspaceRoot);
-        this.executor = new DelegateExecutor(workspaceRoot);
-        this.watchdog = new WatchdogService(this.canvasManager, this.instanceId, 500);
-        this.slc = new SLCEngine(config, this.promptAssembler);
+        this.promptAssembler = new PromptAssembler(workspaceRoot, this.dialogueMemory, this.canvasManager);
         this.resultSummarizer = new ResultSummarizer(config);
-        const toolResultHandler = new ToolResultHandler(this.executor, this.resultSummarizer, callManager);
+        this.executor = new DelegateExecutor(workspaceRoot); // Assigned to this.executor
+        const toolResultHandler = new ToolResultHandler(this.executor, this.resultSummarizer, workspaceRoot, callManager, this.promptAssembler);
+        this.slc = new SLCEngine(config, this.promptAssembler, this.canvasManager);
         this.sle = new SLEEngine(config, this.resultSummarizer, toolResultHandler);
-        this.intentRouter = new IntentRouter(config);
+        this.registry = SkillRegistry.getInstance();
+        this.registry.registerCoreSkills(this.executor, callManager);
 
-        this.startWatchdog(); 
-        this.refreshCompactPersona(); 
-        this.slc.warmUp().catch(() => {});
+        // [V3.6.5] 为 weather_mcp 提供一个 Native 桥接，重用 OpenClaw 的真实执行能力
+        // 修正原 skills_repo/weather_mcp/SKILL.md 中 http://localhost:3003/weather 不可用的问题
+        this.registry.registerNativeHandler('weather_mcp', async (args: any, callId: string) => {
+            const city = args.city || '深圳';
+            console.log(`[FastAgentV3] Native Bridge: Executing weather_mcp for city: ${city}`);
+            const result = await this.executor.executeOpenClaw(callId, `查询${city}今日天气`, 60000);
+            return DelegateExecutor.distill(result);
+        });
+        this.intentRouter = new IntentRouter(config);
+        this.watchdog = new WatchdogService(this.canvasManager, this.instanceId, 1000);
+        this.orchestrator = new AgentOrchestrator(this.slc, this.sle, this.intentRouter, this.promptAssembler, this.canvasManager, this.dialogueMemory, this.shadow);
         
-        console.log(`[FastAgentV3][V3.3 Refactor] Initialized for workspace: ${this.workspaceRoot}`);
+        this.init();
     }
 
-    private async refreshCompactPersona() {
+    private init() {
+        this.startWatchdog(); 
+        this.personaInitPromise = this.refreshCompactPersona().catch(() => {}); 
+        this.slc.warmUp().catch(() => {});
+    }
+
+    private async refreshCompactPersona(callIdOverride?: string) {
+        const callId = callIdOverride || getCurrentCallId() || 'global';
+        if (AgentOrchestrator.isLocked(callId)) {
+            console.log(`[FastAgentV3] Persona refresh skip: session ${callId} is active.`);
+            return;
+        }
+
         try {
-            // 1. 快速回滚一份基础人设 (Regex Fallback)
-            this.compactPersona = await this.promptAssembler.getCompactPersona();
-
-            // 2. [V3.3.0] 委派 ResultSummarizer 基于全量 Raw 信息总结核心摘要
-            const callId = getCurrentCallId() || 'global';
             const state = this.shadow.getOrCreateState(callId);
-            const fullContext = await this.promptAssembler.getContextPrompts(callId, state, true);
-            const highResPersona = await this.resultSummarizer.summarizePersona(fullContext);
-
+            const fullContext = await this.promptAssembler.getContextPrompts(callId, state, false);
+            const highResPersona = await this.resultSummarizer.summarizePersona(this.promptAssembler, callId, fullContext);
             if (highResPersona && highResPersona.length > 5) {
-                this.compactPersona = highResPersona;
-                // [V3.3.0] 持久化到影子状态，确保 SLC 在 assemblePrompt 时能取到最新的高精度摘要
-                await this.shadow.updateState({ metadata: { compact_persona: highResPersona } });
-                
-                // 🚀 为方便用户验证，同步记录到画布日志
-                const callId = getCurrentCallId() || 'global';
-                await this.canvasManager.logCanvasEvent(callId, 'PERSONA_REFRESHED', { compact_persona: highResPersona });
-                
-                console.log(`[FastAgentV3] Persona summarized by SLE and saved: ${this.compactPersona}`);
+                const isPersonaChanged = state.metadata.compact_persona !== highResPersona;
+                if (isPersonaChanged) {
+                    this.compactPersona = highResPersona;
+                    await this.shadow.updateState({ metadata: { compact_persona: highResPersona } });
+                    await this.canvasManager.logCanvasEvent(callId, 'PERSONA_REFRESHED', { compact_persona: highResPersona });
+                }
             }
         } catch (e) {
-            console.error(`[FastAgentV3] Failed to summarize high-res persona:`, e);
-        }
-    }
-
-    private async logCanvasEvent(callId: string, event: string, detail: any) {
-        await this.canvasManager.logCanvasEvent(callId, event, detail);
-    }
-
-    destroy() {
-        console.log(`[FastAgentV3] Destroying Facade...`);
-        this.watchdog.stop();
-        this.processedSessions.clear();
-    }
-
-    private async handleWatchdogTrigger(
-        callId: string,
-        triggerType: '__INTERNAL_TRIGGER__' | '__IDLE_TRIGGER__',
-        chunkTypes: string[],
-        prefix: string
-    ): Promise<void> {
-        const notifier = this.watchdog.getNotifier(callId);
-        if (!notifier) return;
-
-        console.log(`[Watchdog][${this.instanceId}] 📣 ${prefix} for ${callId}`);
-
-        let fullOutput = "";
-        await this.process(
-            triggerType,
-            (chunk) => {
-                if (chunk.content && chunkTypes.includes(chunk.type)) {
-                    fullOutput += chunk.content;
-                }
-            },
-            async () => {},
-            callId
-        );
-
-        const trace = await this.getCurrentTrace(callId);
-        if (fullOutput.trim()) {
-            await notifier(`${prefix}${fullOutput.trim()}`, trace);
+            console.error(`[FastAgentV3] Persona refresh failed:`, e);
+        } finally {
+            // No lock to release here
         }
     }
 
     private startWatchdog() {
-        this.watchdog.on('trigger', async ({ callId, status }) => {
-            status.is_delivered = true;
-            await this.logCanvasEvent(callId, 'WATCHDOG_INTERNAL_TRIGGER', { status });
+        this.watchdog.on('trigger', async ({ callId, canvas }) => {
+            if (this.announcingSessions.has(callId)) return;
+            this.announcingSessions.add(callId);
             try {
-                await this.handleWatchdogTrigger(callId, '__INTERNAL_TRIGGER__', ['internal', 'chat'], '[INTERNAL]');
-                await this.logCanvasEvent(callId, 'WATCHDOG_DELIVERED', { callId });
+                // [V3.6.13] 异步触发入口必须绑定上下文，否则下层 LlmLogger/SLC 会丢失 callId
+                const { callContextStorage } = require('../context/ctx');
+                await callContextStorage.run({ callId, userId: 'system', startTime: Date.now(), metadata: {} }, async () => {
+                    const delivered = await this.handleWatchdogTrigger(callId, '__INTERNAL_TRIGGER__');
+                    // [V3.6.25] 关键修复：仅当播报成功（未因锁定而跳过）时，才标记为已投递
+                    if (delivered) {
+                        await this.canvasManager.markAsDelivered(callId);
+                    }
+                });
             } catch (e) {
-                console.error(`[Watchdog] Delivery Failed:`, e);
-                status.is_delivered = false;
-                // 🚀 重要：同步记录失败状态，确保磁盘快照更新为未投递，以便下次心跳重试
-                await this.logCanvasEvent(callId, 'WATCHDOG_DELIVERY_FAILED', { error: (e as any).message });
+                console.error(`[Watchdog Trigger Error] ${callId}:`, e);
+            } finally {
+                this.announcingSessions.delete(callId);
             }
         });
-
         this.watchdog.on('idle_trigger', async ({ callId }) => {
-            try {
-                await this.handleWatchdogTrigger(callId, '__IDLE_TRIGGER__', ['idle', 'chat'], '[IDLE]');
-            } catch (e) {
-                console.error(`[Watchdog] Idle greeting failed:`, e);
-            }
+            if (callId === 'global' || callId === 'anonymous') return; // [V3.6.13] 屏蔽管理会话与内部匿名会话
+            const { callContextStorage } = require('../context/ctx');
+            await callContextStorage.run({ callId, userId: 'system', startTime: Date.now(), metadata: {} }, async () => {
+                await this.handleWatchdogTrigger(callId, '__IDLE_TRIGGER__');
+            });
         });
-
         this.watchdog.start();
     }
 
-    private async getCurrentTrace(callId: string): Promise<string[] | undefined> {
-        const events = await this.canvasManager.getCanvasEvents(callId);
-        const traceEvent = [...events].reverse().find(e => e.event === 'TRACE');
-        return traceEvent?.detail?.trace;
+    private async handleWatchdogTrigger(callId: string, trigger: string): Promise<boolean> {
+        let out = "";
+        const notifier = this.watchdog.getNotifier(callId);
+        if (!notifier) return false;
+
+        // [V3.6.4] 触发对应类型的逻辑流程
+        const success = await this.process(trigger, (chunk) => {
+            if (chunk.content && (chunk.type === 'internal' || chunk.type === 'chat' || chunk.type === 'idle')) {
+                out += chunk.content;
+            }
+        }, undefined, callId);
+
+        if (out.trim()) {
+            console.log(`[FastAgentV3] Proactive Broadcast for ${callId} (${trigger}): ${out.trim().substring(0, 50)}...`);
+            await notifier(out.trim(), []);
+            return true;
+        }
+        return success;
     }
 
-    /**
-     * [V3.2 Facade] 核心编排逻辑
-     */
+    async destroySession(callId: string) {
+        console.log(`[FastAgentV3][${callId}] 🗑️ Destroying session and unregistering notifier...`);
+        this.watchdog.unregisterNotifier(callId);
+        this.canvasManager.removeCanvas(callId);
+        await this.canvasManager.persistAll().catch(() => {});
+        this.processedSessions.delete(callId);
+    }
+
     async process(
         text: string, 
         onChunk: (resp: FastAgentResponse) => void,
         notifier?: (text: string, trace?: string[]) => Promise<void>,
         callIdOverride?: string
-    ) {
-        const trace: string[] = [];
-        const totalStart = performance.now();
+    ): Promise<boolean> {
         const callId = callIdOverride || getCurrentCallId() || 'anonymous';
         
-        const isNewSession = !this.processedSessions.has(callId);
-        if (isNewSession) {
-            this.processedSessions.add(callId);
-            // 🚀 [V3.3.0] Session Start 初始化 (后台执行，不阻塞首字返回)
-            this.intentRouter.initializeSession(callId, this.canvasManager).catch(e => {});
-            this.refreshCompactPersona().catch(e => {});
-        }
-
-        if (notifier) this.watchdog.registerNotifier(callId, notifier);
-
+        // [V3.6.25] 判定锁定类型并注入信号对象以支持强制中断
         const signal = { interrupted: false, slcDone: false };
-        let slcOutputResult = "";
-        let sleOutputResult = "";
-        const canvas = this.canvasManager.getCanvas(callId);
-        
-        // 🚀 [V3.3.1] 每次请求都更新画布时间，确保回复（含心跳触发）数据新鲜
-        canvas.env.time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        
-        // 🚀 [V3.4.1] 标记繁忙状态，防止心跳触发打断当前正在进行的互动
-        canvas.context.is_busy = true;
-        
-        try {
-            if (text !== '__INTERNAL_TRIGGER__' && text !== '__IDLE_TRIGGER__') {
-                canvas.context.last_interaction_time = Date.now();
-                onChunk({ content: " ", type: 'bridge', isFinal: false });
-            }
+        let lockType: 'user' | 'internal' | 'idle' = 'user';
+        if (text === '__INTERNAL_TRIGGER__') lockType = 'internal';
+        else if (text === '__IDLE_TRIGGER__') lockType = 'idle';
 
-            // 🚀 [V3.3.9] SSOT 内存恢复：从影子管理器获取真正的对话历史
-            let managedMessages = await this.dialogueMemory.getHistoryMessages(callId, 10);
-            
-            // 🚀 [V3.4.0] ASR 纠错洗稿：根据 aliasMap 替换历史记录中的错别字
-            const call = this.callManager?.getCallState(callId);
-            if (call && call.aliasMap.size > 0) {
-                managedMessages = managedMessages.map(m => {
-                    let content = m.content;
-                    for (const [wrong, correct] of call.aliasMap.entries()) {
-                        content = content.replace(new RegExp(wrong, 'g'), correct);
-                    }
-                    return { ...m, content };
-                });
-            }
-
-            // 包装 onChunk，同步更新活跃时间（防止流式响应期间心跳超时）
-            const wrappedOnChunk = (chunk: FastAgentResponse) => {
-                canvas.context.last_interaction_time = Date.now();
-                onChunk(chunk);
-            };
-
-            // 1. 准备 SLE 判定上下文 (Intent Detection)
-            const fullSoul = await (async () => {
-                await this.shadow.updateState({ mode: 'session_start', metadata: { text_input: text } });
-                await this.shadow.recover(callId);
-                const state = this.shadow.getScopedState();
-                const soul = await this.promptAssembler.assemblePrompt('SLE', callId, state, isNewSession);
-                
-                if (text !== '__INTERNAL_TRIGGER__' && text !== '__IDLE_TRIGGER__') {
-                    await this.dialogueMemory.logDialogue(callId, 'user', text);
-                    // 🚀 将当前消息也加入内存上下文
-                    managedMessages.push({ role: 'user', content: text });
-                }
-                
-                return soul + `\n[核心画布实时状态 (Canvas State)]\n环境: ${JSON.stringify(canvas.env)}\n任务状态: ${JSON.stringify(canvas.task_status)}\n最近播报锚点 (Anchor): ${canvas.context.last_spoken_fragment || '无'}\n`;
-            })();
-
-            // 2. 同步判定意图 (Routing Decision)
-            let needsTool = false;
-            let toolIntent = "";
-            
-            if (text !== '__INTERNAL_TRIGGER__' && text !== '__IDLE_TRIGGER__') {
-                trace.push('SLE (意图分析)');
-                const detection = await this.intentRouter.detectIntent(text, managedMessages, fullSoul);
-                needsTool = detection.needsTool;
-                toolIntent = detection.intent || "";
-                console.log(`[FastAgentV3][Router] needsTool: ${needsTool}, intent: ${toolIntent}`);
-            }
-
-            // 3. 执行分流
-            if (text === '__INTERNAL_TRIGGER__' || text === '__IDLE_TRIGGER__') {
-                // A. 画布/心跳触发 -> 直接 SLC 播报
-                const step = text === '__IDLE_TRIGGER__' ? 'SLC (心跳)' : 'SLC (任务播报)';
-                trace.push(step);
-                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, canvas.task_status.direct_response || canvas.task_status.summary, this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
-                signal.slcDone = true;
-            } else if (needsTool) {
-                // B. 任务模式 (Tool Mode) -> SLC 垫词 + SLE 并行执行
-                console.log(`[FastAgentV3] Entering TOOL MODE...`);
-                
-                const slcPromise = (async () => {
-                    trace.push('SLC (垫词)');
-                    return await this.slc.run(
-                        '__TOOL_WAITING_TRIGGER__', 
-                        canvas.context.last_spoken_fragment, 
-                        toolIntent, 
-                        this.shadow, 
-                        wrappedOnChunk, 
-                        signal,
-                        managedMessages, // 🚀 [V3.3.5] 传递对话上下文
-                        isNewSession
-                    );
-                })();
-                
-                const slePromise = (async () => {
-                    trace.push('SLE (判断具体使用的工具)');
-                    return await this.sle.run(
-                        managedMessages, 
-                        text, 
-                        "", 
-                        fullSoul, 
-                        callId, 
-                        this.canvasManager, 
-                        (chunk) => {}, 
-                        signal,
-                        toolIntent
-                    );
-                })();
-
-                slcOutputResult = await slcPromise;
-                signal.slcDone = true;
-                slePromise.catch(e => console.error(e));
-            } else {
-                // C. 聊天模式 (Chat Mode) -> 仅 SLC 直接回复
-                console.log(`[FastAgentV3] Entering CHAT MODE...`);
-                trace.push('SLC (直接回复)');
-                slcOutputResult = await this.slc.run(text, canvas.context.last_spoken_fragment, canvas.task_status.summary || canvas.task_status.extended_context || "", this.shadow, wrappedOnChunk, signal, managedMessages, isNewSession);
-                signal.slcDone = true;
-                
-                // 为了保持 SLE 对话记忆，仍异步运行 SLE 但不推流
-                this.sle.run(managedMessages, text, slcOutputResult, fullSoul, callId, this.canvasManager, () => {}, signal).catch(e => {});
-            }
-
-            const slcFinalOutput = slcOutputResult;
-            if (slcFinalOutput && slcFinalOutput.length > 5 && slcFinalOutput.length < 50) {
-                canvas.context.last_spoken_fragment = slcFinalOutput;
-            }
-            
-            // 4. 统一存储对话记录 (脱敏)
-            // 关键：仅将最终用于“说话”的内容存入对话历史。
-            // 在 Tool Mode 下，SLE 的输出包含内部工具执行备注，不应混入 Assistant 回复历史。
-            // 只有 Chat Mode 或 Internal Trigger 产生的正式对白才存入消息。
-            const assistantVoiceReply = slcFinalOutput.trim();
-            
-            if (assistantVoiceReply) {
-                const cleanReply = TextCleaner.decant(assistantVoiceReply);
-                await this.dialogueMemory.logDialogue(callId, 'assistant', cleanReply);
-            }
-            
-            await this.logCanvasEvent(callId, 'TRACE', { trace });
-            wrappedOnChunk({ content: '', isFinal: true, type: 'filler', trace });
-            
-            // 🚀 [V3.3.10] 消费性清理 (Clear on Delivery)
-            // 一旦确认摘要已投递（is_delivered === true），清理 Canvas 摘要区以防止上下文污染
-            if (canvas.task_status.is_delivered && canvas.task_status.summary) {
-                console.log(`[FastAgentV3][${callId}] 🧹 Consuming delivered summary to prevent context pollution.`);
-                canvas.task_status.summary = ""; 
-                canvas.task_status.direct_response = "";
-                // 注意：保持 extended_context 不清理，以便下一轮 IntentRouter 判定是否“命中缓存”
-                canvas.task_status.extracted_data = "";
-                await this.logCanvasEvent(callId, 'CANVAS_CONSUMED', { reason: 'pollution_prevention' });
-            }
-            
-            // 🚀 [V3.3.8] 完成一次回复后（含触发），显式更新最后交互时间，防止冷场重叠
-            canvas.context.last_interaction_time = Date.now();
-        } finally {
-            canvas.context.is_busy = false; // 🚀 解除繁忙标记
+        if (!this.orchestrator.tryLockSession(callId, lockType, signal)) {
+            console.log(`[FastAgentV3] Session ${callId} is locked by another process (likely User), skipping concurrent ${lockType.toUpperCase()} task.`);
+            return false;
         }
-        
-        console.log(`[V3 Perf][${callId}] Process Finished in ${(performance.now() - totalStart).toFixed(2)}ms, trace: ${trace.join(' -> ')}`);
+
+        try {
+            this.canvasManager.syncEnvContext(callId);
+            
+            const canvas = this.canvasManager.getCanvas(callId);
+            canvas.context.is_busy = true;
+
+            const isNew = !this.processedSessions.has(callId);
+            if (isNew) {
+                this.processedSessions.add(callId);
+                // [V3.6.25] 确保人设已经完成初步汇总加载
+                if (this.personaInitPromise) await this.personaInitPromise;
+                // [V3.6.25] 状态共济：将初始化阶段或已更新的全局人设注入新会话，防止首轮冷启动失忆
+                if (this.compactPersona) {
+                    await this.shadow.updateState({ metadata: { compact_persona: this.compactPersona } });
+                }
+            }
+            
+            // [V3.6.23] 逻辑极简：运行时不再自动刷新人设快照，仅由 Init 阶段或外部手动触发，保证执行性能
+            if (notifier) this.watchdog.registerNotifier(callId, notifier);
+
+            // [V3.6.15] 只有真实的用户输入或内部任务完成才刷新“交互时间”
+            // 纯粹的 IDLE_TRIGGER 不应刷新交互时间，否则会进入每 10s 触发一次的死循环
+            const isTrigger = text === '__INTERNAL_TRIGGER__' || text === '__IDLE_TRIGGER__';
+            if (!isTrigger) {
+                canvas.context.last_interaction_time = Date.now();
+                canvas.context.idle_trigger_count = 0; 
+            }
+            
+            await this.canvasManager.persistContext(callId);
+            let activeTaskId: string | undefined;
+            try {
+                if (text !== '__INTERNAL_TRIGGER__' && text !== '__IDLE_TRIGGER__' && text !== '__REPLY_POLISH_TRIGGER__') {
+                    await this.dialogueMemory.logDialogue(callId, 'user', text);
+                }
+                activeTaskId = canvas.task_status.taskId;
+                const trace: string[] = [];
+                const result = await this.orchestrator.orchestrate(text, onChunk, callId, isNew, signal, trace, activeTaskId);
+                if (result) {
+                    canvas.context.last_spoken_fragment = result;
+                    await this.dialogueMemory.logDialogue(callId, 'assistant', TextCleaner.decant(result));
+                    await this.canvasManager.persistContext(callId); 
+                }
+                onChunk({ content: '', isFinal: true, type: 'filler', trace });
+            } finally { 
+                canvas.context.is_busy = false; 
+                await this.canvasManager.persistContext(callId); 
+            }
+            return true;
+        } finally {
+            this.orchestrator.releaseLockSession(callId);
+        }
     }
+
+    destroy() { this.watchdog.stop(); this.processedSessions.clear(); }
 }

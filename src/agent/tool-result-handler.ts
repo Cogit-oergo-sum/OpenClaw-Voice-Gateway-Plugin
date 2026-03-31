@@ -3,116 +3,150 @@ import { ResultSummarizer } from './result-summarizer';
 import { CanvasManager } from './canvas-manager';
 import { CanvasState } from './types';
 import { CallManager } from '../call/call-manager';
-import { ASR_CORRECTION_DIRECTIVE_TEMPLATE } from './prompts';
+import { SkillRegistry } from './skills';
+import { PromptAssembler } from './prompt-assembler';
+import * as path from 'path';
 
 /**
- * [V3.3.0] ToolResultHandler: 工具执行结果处理器
- * 职责：执行工具调用、解析结果、统一 Canvas 状态转换
+ * [V3.3.0] ToolResultHandler: 工具执行结果处理器 (V3.6 Slim)
  */
 export class ToolResultHandler {
     constructor(
         private executor: DelegateExecutor,
         private summarizer: ResultSummarizer,
-        private callManager?: CallManager
-    ) {}
+        private workspaceRoot: string,
+        private callManager?: CallManager,
+        private promptAssembler?: PromptAssembler
+    ) {
+        const registry = SkillRegistry.getInstance();
+        registry.registerCoreSkills(this.executor, this.callManager);
+        const repoDir = path.join(path.resolve(__dirname, '../../'), 'skills_repo');
+        registry.loadFromDirectory(repoDir);
+        registry.loadFromDirectory(path.join(this.workspaceRoot, 'skills'));
+    }
 
-    /**
-     * 处理工具调用结果并更新 Canvas 状态
-     */
-    async handleToolCalls(
-        toolCalls: any[],
-        text: string,
-        callId: string,
-        canvas: CanvasState,
-        canvasManager: CanvasManager
-    ): Promise<void> {
-        for (const tc of toolCalls) {
+    private lastHandledVersions: Map<string, number> = new Map();
+    private lastSummarizedOutputs: Map<string, string> = new Map();
+    private activeMonitors: Set<string> = new Set();
+
+    async handleToolCalls(toolCalls: any[], text: string, callId: string, canvas: CanvasState, canvasManager: CanvasManager, taskId?: string): Promise<void> {
+        const sortedTools = [...toolCalls].sort((a, b) => a.function.name === 'correct_asr_hotword' ? -1 : 1);
+        const registry = SkillRegistry.getInstance();
+        let hasLongRunning = false;
+        let combinedSummary = "";
+
+        const intents = sortedTools.map(tc => {
             const args = JSON.parse(tc.function.arguments || '{}');
-            const intent = args.intent || text;
+            const cmd = args.command || args.intent || args.query || "";
+            return tc.function.name === 'correct_asr_hotword' 
+                ? `ASR纠错(${args.original_word}→${args.corrected_word})` 
+                : (cmd || `(执行:${tc.function.name})`);
+        });
+        canvas.task_status.status = 'PENDING';
+        canvas.task_status.summary = `正在同步执行复合工作流: ${intents.join(' + ')}...`;
+        await canvasManager.logCanvasEvent(callId, 'CANVAS_PENDING_MULTI', { intents });
 
-            canvas.task_status.status = 'PENDING';
-            canvas.task_status.version = Date.now();
-            canvas.task_status.direct_response = "";
-            canvas.task_status.extended_context = "";
-            canvas.task_status.summary = `正在同步执行意图: ${intent}...`;
-            await canvasManager.logCanvasEvent(callId, 'CANVAS_PENDING', { intent });
+        for (const tc of sortedTools) {
+            const args = JSON.parse(tc.function.arguments || '{}');
+            const command = args.command || args.intent || args.query || text;
+            const skill = registry.getSkill(tc.function.name);
+            if (!skill) continue;
 
             try {
-                if (tc.function.name === 'correct_asr_hotword') {
-                    const { wrong, correct } = args;
-                    if (this.callManager) {
-                        const call = this.callManager.getCallState(callId);
-                        const alreadyCorrected = call?.aliasMap.get(wrong) === correct;
-
-                        await this.callManager.updateAsrCorrection(callId, wrong, correct);
-
-                        // [V3.4.4] 权力下放：不再硬编码播报文案，而是通过潜意识指令引导 AI 自由发挥
-                        if (!alreadyCorrected) {
-                            const directive = ASR_CORRECTION_DIRECTIVE_TEMPLATE(wrong, correct);
-                            await this.transitionToReady(canvas, directive, canvasManager, callId, 'ASR_CORRECTED');
-                        } else {
-                            // 虽然不更新画布摘要，但仍持久化日志以便可观测
-                            await canvasManager.logCanvasEvent(callId, 'ASR_ALREADY_FIXED', { wrong, correct });
+                if (skill.isLongRunning) {
+                    hasLongRunning = true;
+                    // [V3.6.18] 进度监视器：针对长耗时任务开启增量摘要循环
+                    Promise.resolve().then(async () => {
+                        const monitorId = `${callId}-${skill.name}-${taskId || 'legacy'}`;
+                        if (this.activeMonitors.has(monitorId)) {
+                            console.log(`[ToolResultHandler] Monitor for ${monitorId} already active. Skipping duplicate.`);
+                            return;
                         }
-                    }
-                    continue;
-                }
-
-                const raceResult = await this.executor.executeOpenClaw(callId, intent);
-
-                if (raceResult.isTimeout) {
-                    if (raceResult._pendingPromise) {
-                        this.executor.waitAndParse(raceResult._pendingPromise).then(async (finalResult) => {
-                            const rawOut = finalResult.stdout || (finalResult.stderr ? `错误: ${finalResult.stderr}` : "任务完成。");
-                            const summary = await this.summarizer.summarizeTaskResult(rawOut, intent);
-
-                            if (finalResult.parsedData?.task_status) {
-                                Object.assign(canvas.task_status, finalResult.parsedData.task_status);
+                        this.activeMonitors.add(monitorId);
+                        
+                        console.log(`[ToolResultHandler] Starting Progressive Monitor for ${monitorId}`);
+                        
+                        // 1. 设置初始快照，防止空摘要触发首次误判
+                        this.lastHandledVersions.set(monitorId, canvas.task_status.version);
+                        this.lastSummarizedOutputs.set(monitorId, canvas.task_status.summary);
+                        
+                        // 2. 启动执行并监听中间状态
+                        const executionPromise = (skill as any).execute(args, callId, canvasManager, taskId);
+                        
+                        // 定时检查 Canvas 更新 (增量摘要逻辑: 2秒一次心跳探测)
+                        let isProcessingInterval = false;
+                        const checkInterval = setInterval(async () => {
+                            if (isProcessingInterval) return; // 防止 LLM 调用积压导致并发堆叠
+                            isProcessingInterval = true;
+                            
+                            try {
+                                const currentCanvas = canvasManager.getCanvas(callId);
+                                const lastVer = this.lastHandledVersions.get(monitorId) || 0;
+                                const lastOut = this.lastSummarizedOutputs.get(monitorId) || "";
+                                
+                                // [逻辑条件]：仍在处理中 && (磁盘/内存版本已更新 && 当前内容不等于上次产出的摘要)
+                                // 用“摘要自洽”比对代替“原始数据”比对，因为 appendCanvasAudit 会覆盖 summary
+                                if (currentCanvas.task_status.status === 'PENDING' && 
+                                    currentCanvas.task_status.version > lastVer &&
+                                    currentCanvas.task_status.summary !== lastOut &&
+                                    currentCanvas.task_status.summary !== ""
+                                ) {
+                                    console.log(`[ToolResultHandler] 🔄 Progressive summary triggered for ${monitorId} (v${currentCanvas.task_status.version})`);
+                                    
+                                    // [V3.6.4修正] 进度同步不再独立提纯，而是直接写入原始文本，由交付通道统一通过 SLE(SUMMARIZING) 提纯。
+                                    // 这样能消除冗余的 LLM 调用并解决任务结果同步与异步交互冲突。
+                                    const rawUpdate = currentCanvas.task_status.summary;
+                                    await canvasManager.appendCanvasAudit(callId, rawUpdate, 'PENDING', false, taskId);
+                                    
+                                    // 记录产出的摘要，下一轮以此为基准判断 Tool 是否有新输出
+                                    this.lastSummarizedOutputs.set(monitorId, canvasManager.getCanvas(callId).task_status.summary);
+                                    this.lastHandledVersions.set(monitorId, canvasManager.getCanvas(callId).task_status.version);
+                                }
+                                
+                                if (currentCanvas.task_status.status !== 'PENDING') {
+                                    clearInterval(checkInterval);
+                                    this.lastHandledVersions.delete(monitorId);
+                                    this.lastSummarizedOutputs.delete(monitorId);
+                                    this.activeMonitors.delete(monitorId);
+                                }
+                            } finally {
+                                isProcessingInterval = false;
                             }
-                            await this.transitionToReady(canvas, summary, canvasManager, callId);
-                        }).catch(e => {
-                            console.error(`[SLE Background Error] ${e}`);
-                            this.transitionToReady(canvas, `任务执行出错: ${e.message}`, canvasManager, callId, 'CANVAS_CLI_ERROR');
-                        });
-                    }
+                        }, 2000);
+
+                        // 3. 等待最终结果
+                        const raw = await executionPromise;
+                        
+                        // [V3.6.19] 关键修复：识别“后台启动”提示。
+                        // 如果返回的是 TaskDelegateSkill 产生的后台挂起提示词，则维持 PENDING。
+                        // 否则对于长耗时工具，Promise 完成即代表结果就绪 (READY)。
+                        const isFinal = !raw.includes('任务已在后台启动'); 
+                        
+                        clearInterval(checkInterval);
+                        // [V3.6.4] 关键优化：长耗时长最终结果不再此处调用 summarizer
+                        // 而是直接写入 Canvas，由 Watchdog 触发 Orchestrator 的原子 SUMMARIZING 场景
+                        // 这样既防止了双重 LLM 调用，也保证了逻辑专家对最终对白的绝对控制权
+                        await canvasManager.appendCanvasAudit(callId, raw, isFinal ? 'READY' : 'PENDING', false, taskId);
+                    }).catch(async e => {
+                        console.error(`[ToolResultHandler] Long-running tool error:`, e);
+                        await canvasManager.appendCanvasAudit(callId, `[${skill.name}] 任务执行异常: ${e.message}`, 'READY', false, taskId);
+                    });
                 } else {
-                    let result = "";
-                    const data = raceResult.parsedData;
-                    if (data) {
-                        result = (data.result?.payloads && data.result.payloads[0]?.text)
-                            || (data.payloads && data.payloads[0]?.text)
-                            || data.content || data.message || JSON.stringify(data);
-                        if (data.task_status) {
-                            Object.assign(canvas.task_status, data.task_status);
-                            await canvasManager.logCanvasEvent(callId, 'CANVAS_CLI_SYNC', { status: data.task_status.status });
-                        }
-                    } else {
-                        result = raceResult.stdout.replace(/HEARTBEAT_OK/g, '').trim();
-                        if (!result && raceResult.stderr) {
-                            result = `执行失败: ${raceResult.stderr.split('\n')[0]}`;
-                        } else if (!result) {
-                            result = "已按指令处理妥当。";
-                        }
-                    }
-                    await this.transitionToReady(canvas, result, canvasManager, callId);
+                    combinedSummary += (combinedSummary ? "\n" : "") + await skill.execute(args, callId, canvasManager);
                 }
-            } catch (e: any) {
-                console.error(`[SLE Tool Error] ${e.message}`);
-                await this.transitionToReady(canvas, `工具执行失败: ${e.message}`, canvasManager, callId, 'CANVAS_CLI_ERROR');
-            }
+            } catch (e: any) { combinedSummary += (combinedSummary ? "\n" : "") + `[${skill.name}] 失败: ${e.message}`; }
+        }
+
+        if (hasLongRunning) {
+            canvas.task_status.status = 'PENDING';
+            if (combinedSummary && !canvas.task_status.summary.includes(combinedSummary)) canvas.task_status.summary += `\n${combinedSummary}`;
+        } else if (combinedSummary) {
+            await this.transitionToReady(canvas, combinedSummary, canvasManager, callId);
         }
     }
 
-    /**
-     * 统一状态转换：将 Canvas 状态更新为 READY
-     */
-    async transitionToReady(
-        canvas: CanvasState,
-        summary: string | { direct_response: string; extended_context: string },
-        canvasManager: CanvasManager,
-        callId: string,
-        eventName: string = 'CANVAS_CLI_READY'
-    ): Promise<void> {
+    async transitionToReady(canvas: CanvasState, summary: any, canvasManager: CanvasManager, callId: string): Promise<void> {
+        let status: 'READY' | 'PENDING' | 'COMPLETED' | 'FAILED' = 'READY';
         if (typeof summary === 'string') {
             canvas.task_status.summary = summary;
             canvas.task_status.direct_response = summary;
@@ -120,14 +154,15 @@ export class ToolResultHandler {
             canvas.task_status.direct_response = summary.direct_response;
             canvas.task_status.extended_context = summary.extended_context;
             canvas.task_status.summary = `${summary.direct_response}\n${summary.extended_context}`;
+            if (summary.status) status = summary.status;
+            if (typeof summary.importance_score === 'number' && summary.importance_score > 0) {
+                canvas.task_status.importance_score = summary.importance_score;
+            }
         }
-        canvas.task_status.status = 'READY';
+        canvas.task_status.status = status;
         canvas.task_status.version = Date.now();
         canvas.task_status.is_delivered = false;
-        // 默认重要性分数为 1.0 (如果业务逻辑没覆盖它)
-        if (canvas.task_status.importance_score === undefined || canvas.task_status.importance_score === 0) {
-            canvas.task_status.importance_score = 1.0;
-        }
-        await canvasManager.logCanvasEvent(callId, eventName, { summary });
+        if (!canvas.task_status.importance_score || canvas.task_status.importance_score === 0) canvas.task_status.importance_score = 5.0;
+        await canvasManager.logCanvasEvent(callId, status === 'READY' || status === 'COMPLETED' ? 'CANVAS_CLI_READY' : 'CANVAS_PROGRESS_SYNC', { summary });
     }
 }

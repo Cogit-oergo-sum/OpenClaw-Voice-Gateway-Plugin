@@ -75,7 +75,7 @@ export function startCallHandler(manager: CallManager, config: ZegoConfig) {
     };
 }
 
-export function endCallHandler(manager: CallManager) {
+export function endCallHandler(manager: CallManager, fastAgent: any) {
     return async (req: any, res: any) => {
         try {
             // 需要控制者提供 userId 及专属的 controlToken 以供鉴权
@@ -97,8 +97,15 @@ export function endCallHandler(manager: CallManager) {
                 return res.status(403).json({ error: 'Forbidden: Invalid controlToken' });
             }
 
+            const agentInstanceId = state.agentInstanceId;
+
             // 执行真正清理
             const stats = await manager.removeCall(userId);
+
+            // [V3.6.14] 通话挂断，立即销毁 Agent 端的会话监听器与僵尸 Canvas
+            if (agentInstanceId) {
+                fastAgent.destroySession(agentInstanceId);
+            }
 
             res.json({ success: true, stats });
         } catch (error: any) {

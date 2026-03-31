@@ -4,7 +4,8 @@ import type { AgentState } from '../components/FluidVoiceCore';
 import type { Message } from '../components/SubtitleStream';
 import type { WidgetData } from '../components/GlassWidget';
 
-const GATEWAY_URL = 'http://localhost:18795';
+// 支持环境变量配置，本地开发默认 localhost，生产环境使用配置的地址
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:18795';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
 
 export function useAgent() {
@@ -29,6 +30,7 @@ export function useAgent() {
   const localStreamRef = useRef<any>(null);
   const targetAgentStreamId = useRef<string>('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
   const log = (msg: string) => console.log(`[useAgent] ${msg}`);
 
@@ -58,7 +60,12 @@ export function useAgent() {
       targetAgentStreamId.current = data.agentStreamId; // Store latest target
 
       if (!zgRef.current) {
+        log('Initializing ZEGO Express Engine...');
         zgRef.current = new ZegoExpressEngine(1623602215, 'wss://webliveroom1623602215-api.zego.im/ws');
+        
+        // Ensure we don't have multiple listeners if this code path runs again (safety)
+        zgRef.current.off('recvExperimentalAPI');
+        zgRef.current.off('roomStreamUpdate');
 
         // Listen for experimental API (Subtitles)
         zgRef.current.on('recvExperimentalAPI', (result: any) => {
@@ -110,14 +117,18 @@ export function useAgent() {
             for (const stream of streamList) {
               log(`Checking stream: ${stream.streamID}, target: ${targetAgentStreamId.current}`);
               if (stream.streamID === targetAgentStreamId.current) {
-                log('Found AI stream, starting playback...');
-                const remoteStream = await zgRef.current!.startPlayingStream(stream.streamID);
-                const audio = document.getElementById('remote-audio') as HTMLAudioElement;
-                if (audio) {
-                  audio.srcObject = remoteStream;
-                  audio.play().catch(e => log('Audio play failed: ' + e.message));
-                } else {
-                  log('Error: remote-audio element not found');
+                log(`Found AI stream (${stream.streamID}), starting playback...`);
+                try {
+                  const remoteStream = await zgRef.current!.startPlayingStream(stream.streamID);
+                  const audio = document.getElementById('remote-audio') as HTMLAudioElement;
+                  if (audio) {
+                    audio.srcObject = remoteStream;
+                    audio.play().catch(e => log('Audio play failed: ' + e.message));
+                  } else {
+                    log('Error: remote-audio element not found');
+                  }
+                } catch (playErr: any) {
+                  log('startPlayingStream failed: ' + playErr.message);
                 }
               }
             }
@@ -125,18 +136,24 @@ export function useAgent() {
         });
       }
 
+      log(`Logging into room: ${data.roomId} as ${MOCK_USER_ID}...`);
       await zgRef.current.loginRoom(data.roomId, data.token, { userID: MOCK_USER_ID, userName: 'Web_Test' });
+      log('Login successful.');
 
       const localStream = await zgRef.current.createStream({ camera: { audio: true, video: false } });
       localStreamRef.current = localStream;
       publishedStreamId.current = data.userStreamId || ('user_stream_' + Date.now());
+      
+      log(`Starting to publish stream: ${publishedStreamId.current}...`);
       zgRef.current.startPublishingStream(publishedStreamId.current, localStream);
+      log('Publication request sent.');
 
       // Enable experimental API
       zgRef.current.callExperimentalAPI({ method: "onRecvRoomChannelMessage", params: {} });
 
       setIsConnected(true);
-      setHookText('COLD START < 800MS');
+      setIsMuted(false); // Reset mute state on new call
+      setHookText('RTC SESSION ESTABLISHED');
 
       // Start Mock Webhook sequence
       startMockSequence();
@@ -205,26 +222,39 @@ export function useAgent() {
     }, 5000);
   };
 
-  const sendTestTTS = async () => {
-    if (!isConnected) return;
-    log('Sending manual test TTS...');
-    try {
-      const res = await fetch(`${GATEWAY_URL}/voice/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'test-token-12345'
-          },
-          body: JSON.stringify({
-              messages: [{ role: 'user', content: 'TEST_TTS_INTERNAL_TRIGGER' }],
-              agent_info: { agent_instance_id: 'CURRENT_SESSION' } // We will handle this mock logic in backend or just use raw API
-          })
-      });
-      if (!res.ok) log('Test TTS failed: ' + res.status);
-    } catch (e: any) {
-        log('Test TTS Error: ' + e.message);
+  const toggleMute = useCallback(async () => {
+    if (!zgRef.current || !publishedStreamId.current) {
+      log('Mute failed: ZEGO engine or stream not ready');
+      return;
     }
-  };
+    const nextMuted = !isMuted;
+    try {
+      log(`Attempting to ${nextMuted ? 'Mute' : 'Unmute'} stream: ${publishedStreamId.current}`);
+      
+      // 1. Client-side track control (instant, reliable)
+      if (localStreamRef.current) {
+        const audioTracks = localStreamRef.current.getAudioTracks();
+        if (audioTracks && audioTracks.length > 0) {
+          audioTracks.forEach((track: MediaStreamTrack) => {
+            track.enabled = !nextMuted;
+            log(`Track ${track.id} set to enabled = ${!nextMuted}`);
+          });
+        } else {
+          log('No audio tracks found in local stream');
+        }
+      }
+
+      // 2. ZEGO Engine control (notifies server)
+      if (localStreamRef.current) {
+        await zgRef.current.mutePublishStreamAudio(localStreamRef.current, nextMuted);
+      }
+      
+      setIsMuted(nextMuted);
+      log(`Microphone ${nextMuted ? 'Muted' : 'Unmuted'} successfully`);
+    } catch (e: any) {
+      log('Mute/Unmute failed: ' + e.message);
+    }
+  }, [isMuted, publishedStreamId]);
 
   const textChatSessionId = useRef<string>(`text-chat-${Date.now()}`);
 
@@ -356,9 +386,10 @@ export function useAgent() {
     hookText,
     pulseTrigger,
     isConnected,
+    isMuted,
     startCall,
     endCall,
-    sendTestTTS,
+    toggleMute,
     sendTextMessage
   };
 }

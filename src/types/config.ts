@@ -46,9 +46,9 @@ export interface FastAgentInternalConfig {
 }
 
 export interface PluginConfig {
-    zego: ZegoConfig;
+    zego?: ZegoConfig;
     llm: LlmConfig;
-    tts: TtsConfig;
+    tts?: TtsConfig;
     asr?: AsrConfig;
     advanced?: AdvancedConfig;
     fastAgent?: FastAgentInternalConfig;

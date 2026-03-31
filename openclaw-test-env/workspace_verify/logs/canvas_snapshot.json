@@ -1,0 +1,42 @@
+{
+  "global": {
+    "env": {
+      "time": "2026/3/25 01:57:07",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "PENDING",
+      "version": 1774421830467,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": false,
+      "summary": ""
+    },
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1774421841535,
+      "is_busy": false
+    }
+  },
+  "real-user": {
+    "env": {
+      "time": "2026/3/25 01:57:20",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "READY",
+      "version": 1774421841929,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": true,
+      "summary": ""
+    },
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1774421840540,
+      "is_busy": false
+    }
+  }
+}

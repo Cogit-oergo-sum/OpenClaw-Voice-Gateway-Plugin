@@ -1,0 +1,8 @@
+{"timestamp":"2026-03-25T06:54:36.963Z","callId":"global","role":"user","content":"__INIT__"}
+{"timestamp":"2026-03-25T06:54:39.764Z","callId":"real-user","role":"user","content":"hello"}
+{"timestamp":"2026-03-25T06:55:24.214Z","callId":"global","role":"user","content":"__INIT__"}
+{"timestamp":"2026-03-25T06:55:26.731Z","callId":"real-user","role":"user","content":"hello"}
+{"timestamp":"2026-03-25T06:56:17.640Z","callId":"global","role":"user","content":"__INIT__"}
+{"timestamp":"2026-03-25T06:56:20.448Z","callId":"real-user","role":"user","content":"hello"}
+{"timestamp":"2026-03-25T06:57:07.709Z","callId":"global","role":"user","content":"__INIT__"}
+{"timestamp":"2026-03-25T06:57:10.470Z","callId":"real-user","role":"user","content":"hello"}

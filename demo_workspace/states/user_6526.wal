@@ -1,9 +1,0 @@
-{"timestamp":1773736863168,"patch":{"mode":"session_start","metadata":{"text_input":"下午好"}},"callId":"user_6526"}
-{"timestamp":1773736879266,"patch":{"mode":"session_start","metadata":{"text_input":"你记错人了"}},"callId":"user_6526"}
-{"timestamp":1773736889025,"patch":{"mode":"session_start","metadata":{"text_input":"我是Rhett"}},"callId":"user_6526"}
-{"timestamp":1773736904153,"patch":{"mode":"session_start","metadata":{"text_input":"今天有点累了"}},"callId":"user_6526"}
-{"timestamp":1773736924431,"patch":{"mode":"session_start","metadata":{"text_input":"可是我在上班，不能歇息"}},"callId":"user_6526"}
-{"timestamp":1773736951238,"patch":{"mode":"session_start","metadata":{"text_input":"你知道openClaw么"}},"callId":"user_6526"}
-{"timestamp":1773736965861,"patch":{"mode":"session_start","metadata":{"text_input":"看看源码结构吧"}},"callId":"user_6526"}
-{"timestamp":1773736984608,"patch":{"mode":"session_start","metadata":{"text_input":"10秒后提醒我喝水"}},"callId":"user_6526"}
-{"timestamp":1773737025970,"patch":{"mode":"session_start","metadata":{"text_input":"你看看checklist这个文件下都有啥内容"}},"callId":"user_6526"}

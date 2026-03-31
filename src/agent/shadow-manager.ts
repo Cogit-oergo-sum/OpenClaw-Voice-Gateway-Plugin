@@ -64,7 +64,10 @@ export class ShadowManager {
         await appendWorkspaceFile(this.workspaceRoot, walFile, JSON.stringify(logEntry) + '\n');
 
         // 2. 更新内存
-        Object.assign(state, { ...patch, lastUpdated: Date.now() });
+        if (patch.metadata) {
+            state.metadata = { ...state.metadata, ...patch.metadata };
+        }
+        Object.assign(state, { ...patch, metadata: state.metadata, lastUpdated: Date.now() });
 
         // 3. 检查 Checkpoint
         const currentCount = (this.walCount.get(callId) || 0) + 1;
@@ -124,7 +127,10 @@ export class ShadowManager {
             try {
                 const entry = JSON.parse(line);
                 const state = this.getOrCreateState(callId);
-                Object.assign(state, { ...entry.patch, lastUpdated: entry.timestamp });
+                if (entry.patch.metadata) {
+                    state.metadata = { ...state.metadata, ...entry.patch.metadata };
+                }
+                Object.assign(state, { ...entry.patch, metadata: state.metadata, lastUpdated: entry.timestamp });
             } catch (e) {
                 console.warn(`[Recovery] Failed to parse WAL line for ${callId}`);
             }

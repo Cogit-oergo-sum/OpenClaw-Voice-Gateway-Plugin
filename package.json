@@ -11,11 +11,15 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test:p0": "ts-node --transpile-only scripts/verify_p0_regression.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.32.35",
+    "@types/js-yaml": "^4.0.9",
     "@types/proper-lockfile": "^4.1.4",
+    "axios": "^1.13.6",
+    "js-yaml": "^4.1.1",
     "openai": "^6.25.0",
     "proper-lockfile": "^4.1.2"
   },

@@ -11,14 +11,16 @@ export class TextCleaner {
         if (!text) return "";
         return text
             .replace(/##+\s/g, '')           // 移除标题前缀 ##
-            .replace(/\*\*|__/g, '')         // 移除加粗 ** 或 __
-            .replace(/\*|_/g, '')            // 移除斜体 * 或 _
+            .replace(/\*\*/g, '')            // 移除加粗 **
+            .replace(/\*/g, '')              // 移除标记 *
             .replace(/`{1,3}.*?`{1,3}/g, '') // 移除代码块
             .replace(/!?\[(.*?)\]\(.*?\)/g, '$1') // 移除链接，仅保留文本 [txt](url) -> txt
             .replace(/^[*-]\s+/gm, '')       // 移除列表符号
             .replace(/^\d+\.\s+/gm, '')      // 移除数字列表
-            .replace(/[\(\[].*?[\)\]]/g, '') // 移除成对的 (...) 和 [...]
-            .replace(/[\(\[].*$/g, '')       // 移除残留的左括号及其后续内容
+            .replace(/[\(\（].*?[\)\）]/g, '')       // 移除成对的 (...) 和 （...）
+            .replace(/\[.*?\]/g, '')               // 移除成对的 [...]
+            .replace(/\{.*?\}/g, '')               // 移除成对的 {...} (JSON)
+            .replace(/[\(\（\[\{].*$/g, '')          // 移除残留的左括号及其后续内容
             .replace(/刚才我把那个“.*?”的事情处理好了，结果是：/g, '')
             .replace(/HEARTBEAT_OK/g, '')
             .replace(/session_start/g, '')

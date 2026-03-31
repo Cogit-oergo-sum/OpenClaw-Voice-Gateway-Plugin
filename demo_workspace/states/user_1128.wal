@@ -1,4 +1,0 @@
-{"timestamp":1773737650374,"patch":{"mode":"session_start","metadata":{"text_input":"你是谁"}},"callId":"user_1128"}
-{"timestamp":1773737656813,"patch":{"mode":"session_start","metadata":{"text_input":"我是谁"}},"callId":"user_1128"}
-{"timestamp":1773737669501,"patch":{"mode":"session_start","metadata":{"text_input":"你知道我在哪么"}},"callId":"user_1128"}
-{"timestamp":1773737681328,"patch":{"mode":"session_start","metadata":{"text_input":"我是说我的地理位置"}},"callId":"user_1128"}

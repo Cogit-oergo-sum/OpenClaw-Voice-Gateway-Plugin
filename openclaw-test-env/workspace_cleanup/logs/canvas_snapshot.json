@@ -1,0 +1,22 @@
+{
+  "global": {
+    "env": {
+      "time": "",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "PENDING",
+      "version": 1774422161012,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": false,
+      "summary": ""
+    },
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1774422162805,
+      "is_busy": false
+    }
+  }
+}

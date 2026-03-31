@@ -120,6 +120,14 @@ body {
   text-shadow: 0 0 10px rgba(255,255,255,0.3);
 }
 
+.text-glow-red {
+  text-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 .subtitle-mask {
   mask-image: linear-gradient(to top, black 85%, transparent 100%);
   -webkit-mask-image: linear-gradient(to top, black 85%, transparent 100%);

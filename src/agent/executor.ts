@@ -23,11 +23,22 @@ export class DelegateExecutor {
      * 执行 OpenClaw 代理任务
      * 支持 5s 超时赛跑逻辑，用于分级反馈
      */
-    async executeOpenClaw(callId: string, intent: string, timeoutMs: number = 5000): Promise<ExecutionResult> {
+    async executeOpenClaw(callId: string, command: string, timeoutMs: number = 5000): Promise<ExecutionResult> {
+        // [V3.6.24] 极速 Mock 模式拦截，用于 dev 指令下的纯逻辑/UI 调试
+        if (process.env.OPENCLAW_MOCK === 'true') {
+            console.log(`[DelegateExecutor][MOCK] Intercepted command: "${command}"`);
+            return {
+                stdout: JSON.stringify({ status: 'success', message: `[MOCK] 模拟任务 "${command}" 已成功执行。` }),
+                stderr: '',
+                parsedData: { status: 'success' },
+                isTimeout: false
+            };
+        }
+
         const openclawHome = path.join(path.dirname(this.workspaceRoot), 'openclaw_home');
-        const command = `docker exec openclaw_voice_test openclaw agent --agent main --session-id "${callId}" --message "${intent.replace(/"/g, '\\"')}" --json`;
+        const dockerCmd = `docker exec openclaw_voice_test openclaw agent --agent main --session-id "${callId}" --message "${(command || '').replace(/"/g, '\\"')}" --json`;
         
-        const cliPromise = execAsync(command, {
+        const cliPromise = execAsync(dockerCmd, {
             env: { 
                 ...process.env, 
                 OPENCLAW_HOME: openclawHome,
@@ -88,5 +99,23 @@ export class DelegateExecutor {
             } catch(e) {}
         }
         return { stdout, stderr, parsedData, isTimeout: false };
+    }
+    /**
+     * [V3.6.5] 结果提纯：从 openClaw 的复杂返回中仅提取有效 payloads 文本
+     */
+    static distill(result: ExecutionResult): string {
+        const payloads = result.parsedData?.result?.payloads;
+        if (Array.isArray(payloads) && payloads.length > 0) {
+            // 仅提取 payloads 中的关键文本，过滤 JSON 和 STDOUT 噪音
+            return payloads
+                .map((p: any) => p.text || p.content || (typeof p === 'string' ? p : ''))
+                .filter(t => t.trim() !== '')
+                .join('\n\n');
+        }
+        // 兜底：尝试查找 common JSON 结果中的 message/text 字段
+        if (result.parsedData?.message) return result.parsedData.message;
+        if (result.parsedData?.text) return result.parsedData.text;
+
+        return (result.stdout || '').trim() || '任务已执行，无结果返回。';
     }
 }
