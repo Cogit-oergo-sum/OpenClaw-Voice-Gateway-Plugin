@@ -1,1 +1,157 @@
-{}
+{
+  "test_v371_call": {
+    "env": {
+      "time": "",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_1775032845473_nwbc55",
+      "name": "Test Task",
+      "status": "READY",
+      "summary": "Task is ready",
+      "importance_score": 10,
+      "is_delivered": false,
+      "created_at": 1775032845473,
+      "updated_at": 1775032845473,
+      "version": 1775032845473,
+      "taskId": "t_1775032845473_nwbc55",
+      "current_progress": 0,
+      "direct_response": "Task is ready"
+    },
+    "tasks": [
+      {
+        "id": "t_1775032845473_nwbc55",
+        "name": "Test Task",
+        "status": "READY",
+        "summary": "Task is ready",
+        "importance_score": 10,
+        "is_delivered": false,
+        "created_at": 1775032845473,
+        "updated_at": 1775032845473,
+        "version": 1775032845473,
+        "direct_response": "Task is ready"
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1775032845473,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "verify-v43-1776772633791": {
+    "env": {
+      "time": "2026/4/21 19:57:13",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "PENDING",
+      "taskId": "",
+      "version": 1776772634202,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": false,
+      "summary": ""
+    },
+    "tasks": [],
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1776772633849,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "verify-v43-1776772634210": {
+    "env": {
+      "time": "2026/4/21 19:57:14",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "PENDING",
+      "taskId": "",
+      "version": 1776772634796,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": false,
+      "summary": ""
+    },
+    "tasks": [],
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1776772634212,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "verify-v43-1776772740047": {
+    "env": {
+      "time": "2026/4/21 19:59:00",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_tvdz",
+      "name": "查询深圳今天的天气情况",
+      "status": "FAILED",
+      "summary": "任务进程在网关重启期间已中断。",
+      "importance_score": 5,
+      "is_delivered": false,
+      "created_at": 1776772743465,
+      "updated_at": 1777016243299,
+      "version": 1777016243299,
+      "pending_questions": [],
+      "taskId": "t_tvdz",
+      "current_progress": 0,
+      "direct_response": "任务进程在网关重启期间已中断。",
+      "completed_at": 1777016243299
+    },
+    "tasks": [
+      {
+        "id": "t_tvdz",
+        "name": "查询深圳今天的天气情况",
+        "status": "FAILED",
+        "summary": "任务进程在网关重启期间已中断。",
+        "importance_score": 5,
+        "is_delivered": false,
+        "created_at": 1776772743465,
+        "updated_at": 1777016243299,
+        "version": 1777016243299,
+        "pending_questions": [],
+        "direct_response": "任务进程在网关重启期间已中断。",
+        "completed_at": 1777016243299
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "我查一下~\n\n",
+      "interrupted": false,
+      "last_interaction_time": 1776772743531,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "verify-v43-1776772743942": {
+    "env": {
+      "time": "2026/4/21 19:59:03",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "status": "PENDING",
+      "taskId": "",
+      "version": 1776772744355,
+      "current_progress": 0,
+      "importance_score": 0,
+      "is_delivered": false,
+      "summary": ""
+    },
+    "tasks": [],
+    "context": {
+      "last_spoken_fragment": "听到你这么说真好呀",
+      "interrupted": false,
+      "last_interaction_time": 1776772744344,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  }
+}

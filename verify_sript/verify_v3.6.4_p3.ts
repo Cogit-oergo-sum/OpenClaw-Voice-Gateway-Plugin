@@ -35,8 +35,11 @@ async function verify() {
         const memoryMock: any = {
             getHistoryMessages: async () => []
         };
+        const toolResultHandlerMock: any = {};
+        const cronManagerMock: any = {};
+        const executorMock: any = { deleteAgent: async () => true };
 
-        const orchestrator = new AgentOrchestrator(slcMock, sleMock, intentRouterMock, assemblerMock, canvasMgr, memoryMock, shadowMock);
+        const orchestrator = new AgentOrchestrator(slcMock, sleMock, intentRouterMock, assemblerMock, canvasMgr, memoryMock, shadowMock, toolResultHandlerMock, cronManagerMock, executorMock);
 
         const trace: string[] = [];
         const result = await orchestrator.orchestrate("What is the answer?", () => {}, callId, false, { interrupted: false, slcDone: false }, trace);
@@ -65,9 +68,9 @@ async function verify() {
                 return { output: "Summary" };
             }
         };
-        const orchestrator2 = new AgentOrchestrator(slcMock, sleMock2, intentRouterMock, assemblerMock, canvasMgr, memoryMock, shadowMock);
+        const orchestrator2 = new AgentOrchestrator(slcMock, sleMock2, intentRouterMock, assemblerMock, canvasMgr, memoryMock, shadowMock, toolResultHandlerMock, cronManagerMock, executorMock);
         await orchestrator2.orchestrate("__INTERNAL_TRIGGER__", () => {}, callId, false, { interrupted: false, slcDone: false }, []);
-        
+
         console.log("Captured source for internal trigger:", capturedSource);
         if (capturedSource === 'Async-Result-Delivery') {
             console.log("✅ Semantic renaming confirmed (Async-Result-Delivery).");
@@ -78,10 +81,10 @@ async function verify() {
         // 3. Verify Static Lock Check
         console.log("\n[Test 3] Testing Static Lock Check...");
         if (AgentOrchestrator.isLocked(callId)) throw new Error("Should not be locked initially");
-        orchestrator.tryLockRefining(callId);
-        if (!AgentOrchestrator.isLocked(callId)) throw new Error("Should be locked after tryLockRefining");
-        orchestrator.releaseLockRefining(callId);
-        if (AgentOrchestrator.isLocked(callId)) throw new Error("Should be unlocked after releaseLockRefining");
+        orchestrator.tryLockSession(callId, 'user');
+        if (!AgentOrchestrator.isLocked(callId)) throw new Error("Should be locked after tryLockSession");
+        orchestrator.releaseLockSession(callId);
+        if (AgentOrchestrator.isLocked(callId)) throw new Error("Should be unlocked after releaseLockSession");
         console.log("✅ Static lock check methods confirmed.");
 
         console.log("\n[V3.6.4 Phase 3] All Tests Passed! 🌟");

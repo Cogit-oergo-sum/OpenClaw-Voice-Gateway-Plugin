@@ -1,0 +1,6 @@
+SLC Model Benchmark - Thu May 14 19:12:04 HKT 2026
+============================================
+Model                              Pass    Total     Rate     TTFT      SLC
+--------------------------------------------
+qwen3.6-flash                                 33       0%      |ms      |ms
+qwen3.6-plus                                  33       0%      |ms      |ms

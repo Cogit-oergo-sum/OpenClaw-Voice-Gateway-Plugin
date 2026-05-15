@@ -12,7 +12,21 @@
     "build": "tsc",
     "watch": "tsc -w",
     "clean": "rm -rf dist",
-    "test:p0": "ts-node --transpile-only scripts/verify_p0_regression.ts"
+
+    "test:p0": "ts-node --transpile-only scripts/verify_p0_regression.ts",
+
+    "test:router": "ts-node --transpile-only scripts/validation/router/accuracy.ts",
+    "test:router:integrated": "ts-node --transpile-only scripts/validation/router/integrated-accuracy.ts",
+    "test:router:model": "ts-node --transpile-only scripts/validation/router/accuracy.ts",
+    "test:router:latency": "ts-node --transpile-only scripts/validation/router/latency.ts",
+
+    "test:slc": "ts-node --transpile-only scripts/validation/slc/ttft.ts",
+    "test:sle": "ts-node --transpile-only scripts/validation/sle/tool-execution.ts",
+
+    "test:all": "ts-node --transpile-only scripts/validation/index.ts --all",
+    "test:report": "ts-node --transpile-only scripts/validation/index.ts --report",
+    "test:validate": "ts-node --transpile-only scripts/validation/index.ts",
+    "test:zego-assistant": "ts-node --transpile-only scripts/verify-zego-ai-assistant.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.32.35",

@@ -1,5 +1,6 @@
 ---
 name: search_zego_docs
+enabled: false
 description: "检索 ZEGO (即构科技) 官方开发者文档。当你被问到和 ZEGO 相关的技术问题或如何集成 ZEGO 的产品时必须调用本接口。"
 parameters:
   type: object

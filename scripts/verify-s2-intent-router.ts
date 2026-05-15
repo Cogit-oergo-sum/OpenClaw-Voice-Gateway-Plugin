@@ -22,7 +22,7 @@ async function verify() {
             model: process.env.FAST_AGENT_MODEL || process.env.BAILIAN_MODEL || 'qwen-plus',
             baseUrl: process.env.FAST_AGENT_BASE_URL || process.env.BAILIAN_BASE_URL || ''
         },
-        tts: { vendor: 'dummy', appId: '', token: '', voiceType: '' },
+        tts: { vendor: 'dummy', appId: '', token: '', voiceType: '', resourceId: '' },
         fastAgent: {
             sleModel: process.env.FAST_AGENT_SLE_MODEL,
             sleBaseUrl: process.env.FAST_AGENT_BASE_URL

@@ -11,7 +11,7 @@ const mockConfig: PluginConfig = {
         model: 'qwen-turbo', 
         baseUrl: process.env.OPENAI_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1' 
     },
-    tts: { vendor: 'zego', appId: '', token: '', voiceType: '' },
+    tts: { vendor: 'zego', appId: '', token: '', voiceType: '', resourceId: '' },
     fastAgent: {
         slcModel: 'qwen-turbo',
         sleModel: 'qwen-plus' // Use a slightly better model for extraction if possible

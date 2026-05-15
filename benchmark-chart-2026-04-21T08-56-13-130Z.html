@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Qwen Benchmark - 2026-04-21</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #fafafa; }
+  h1 { color: #2c3e50; }
+  h2 { color: #34495e; margin-top: 2em; }
+  .chart-box { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin: 1em 0; }
+  table { border-collapse: collapse; width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.9em; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f8f9fa; color: #2c3e50; font-weight: 600; }
+  .sub { color: #7f8c8d; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>Qwen 模型基准测试</h1>
+<p class="sub">生成时间: 4/21/2026, 4:56:13 PM</p>
+
+<h2>TTFT vs TTFU 对比</h2>
+<p class="sub">实线 = TTFT (首Token), 虚线△ = TTFU (首句完整，含句末标点)</p>
+<div class="chart-box"><canvas id="c1"></canvas></div>
+
+<h2>指令遵循通过率 vs Input Tokens</h2>
+<p class="sub">padding 塞在指令前面，模拟长上下文对指令遵循的稀释效应</p>
+<div class="chart-box"><canvas id="c2"></canvas></div>
+
+<h2>指令遵循详情</h2>
+<table>
+  <thead><tr><th>Model</th><th>Input Tokens</th><th>通过/总数</th><th>通过率</th><th>失败项</th></tr></thead>
+  <tbody><tr><td>qwen-turbo</td><td>100</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>500</td><td>24/30</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">CSV格式, 字数限制(50字), 字数限制(100字), 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>1000</td><td>24/30</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">CSV格式, 字数限制(50字), 字数限制(100字), 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>2000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 中英混合禁止, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>4000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">CSV格式, 字数限制(50字), 字数限制(100字), 中英混合禁止, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>8000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>16000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen-turbo</td><td>32000</td><td>24/30</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 中英混合禁止, 结尾指定格式, 拒绝偏见请求, 角色保持-海盗</td></tr>
+<tr><td>qwen-plus</td><td>100</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen-plus</td><td>500</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 中英混合禁止, 结尾指定格式, 无解释纯结果</td></tr>
+<tr><td>qwen-plus</td><td>1000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen-plus</td><td>2000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen-plus</td><td>4000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen-plus</td><td>8000</td><td>28/30</td><td>93%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen-plus</td><td>16000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 中英混合禁止, 角色保持-海盗</td></tr>
+<tr><td>qwen-plus</td><td>32000</td><td>20/30</td><td>67%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 结尾指定格式, 无解释纯结果, JSON+字数限制</td></tr>
+<tr><td>qwen3.6-plus</td><td>100</td><td>30/30</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.6-plus</td><td>500</td><td>29/30</td><td>97%</td><td style="color:#e74c3c;font-size:0.85em">无markdown代码块</td></tr>
+<tr><td>qwen3.6-plus</td><td>1000</td><td>29/30</td><td>97%</td><td style="color:#e74c3c;font-size:0.85em">结尾指定格式</td></tr>
+<tr><td>qwen3.6-plus</td><td>2000</td><td>29/30</td><td>97%</td><td style="color:#e74c3c;font-size:0.85em">结尾指定格式</td></tr>
+<tr><td>qwen3.6-plus</td><td>4000</td><td>30/30</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.6-plus</td><td>8000</td><td>30/30</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.6-plus</td><td>16000</td><td>30/30</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.6-plus</td><td>32000</td><td>29/30</td><td>97%</td><td style="color:#e74c3c;font-size:0.85em">结尾指定格式</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>100</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>500</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>1000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>2000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>4000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>8000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>16000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.6-35B-A3B</td><td>32000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>100</td><td>28/30</td><td>93%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 分步骤输出</td></tr>
+<tr><td>qwen3.5-plus</td><td>500</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>1000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>2000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>4000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 结尾指定格式, 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>8000</td><td>28/30</td><td>93%</td><td style="color:#e74c3c;font-size:0.85em">分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>16000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 纯英文回复, 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-plus</td><td>32000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 结尾指定格式, 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen3.5-flash</td><td>100</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen3.5-flash</td><td>500</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen3.5-flash</td><td>1000</td><td>28/30</td><td>93%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen3.5-flash</td><td>2000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(100字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen3.5-flash</td><td>4000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止</td></tr>
+<tr><td>qwen3.5-flash</td><td>8000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.5-flash</td><td>16000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.5-flash</td><td>32000</td><td>27/30</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.5-27B</td><td>100</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>500</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>1000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>2000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>4000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>8000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>16000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen3.5-27B</td><td>32000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>100</td><td>15/30</td><td>50%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, CSV格式, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 中英混合禁止, 拒绝偏见请求, True/False二选一, 分步骤输出, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>500</td><td>17/30</td><td>57%</td><td style="color:#e74c3c;font-size:0.85em">CSV格式, 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 中英混合禁止, 拒绝偏见请求, 纯数字输出, True/False二选一, 分步骤输出, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>1000</td><td>17/30</td><td>57%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表3项编号, 单选字母, 纯英文回复, 中英混合禁止, 拒绝偏见请求, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>2000</td><td>16/30</td><td>53%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, XML格式, CSV格式, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 拒绝偏见请求, True/False二选一, 分步骤输出, JSON+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>4000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>8000</td><td>1/30</td><td>3%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>16000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr>
+<tr><td>qwen-flash-character</td><td>32000</td><td>0/30</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON数组, JSON对象, 无markdown代码块, XML格式, CSV格式, Markdown表格, 字数限制(50字), 字数限制(100字), 列表5项, 列表3项编号, 单选字母, 纯英文回复, 纯中文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr></tbody>
+</table>
+
+<script>
+const latencyOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: 'Latency (ms)', font: { size: 13 } }, beginAtZero: true }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + 'ms @ ' + c.parsed.x + ' tokens' } } }
+};
+
+const ifeOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: '通过率 (%)', font: { size: 13 } }, min: 0, max: 100, ticks: { stepSize: 20 } }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + '% @ ' + c.parsed.x + ' tokens' } } }
+};
+
+new Chart(document.getElementById('c1'), { type: 'line', data: { datasets: [
+    { label: 'qwen-turbo TTFT', data: [{"x":99,"y":607},{"x":399,"y":599},{"x":774,"y":327},{"x":1524,"y":246},{"x":3024,"y":328},{"x":6024,"y":537},{"x":12024,"y":1177},{"x":24024,"y":2379}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-turbo TTFU', data: [{"x":99,"y":673},{"x":399,"y":652},{"x":774,"y":408},{"x":1524,"y":305},{"x":3024,"y":378},{"x":6024,"y":633},{"x":12024,"y":1239},{"x":24024,"y":2493}], borderColor: '#e74c3c', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-plus TTFT', data: [{"x":95,"y":406},{"x":395,"y":398},{"x":770,"y":613},{"x":1520,"y":473},{"x":3020,"y":535},{"x":6020,"y":678},{"x":12020,"y":1130},{"x":24020,"y":2578}], borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen-plus TTFU', data: [{"x":95,"y":476},{"x":395,"y":483},{"x":770,"y":702},{"x":1520,"y":559},{"x":3020,"y":623},{"x":6020,"y":776},{"x":12020,"y":1221},{"x":24020,"y":2782}], borderColor: '#3498db', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-plus TTFT', data: [{"x":98,"y":3329},{"x":398,"y":1321},{"x":773,"y":1063},{"x":1523,"y":2673},{"x":3023,"y":1397},{"x":6023,"y":1522},{"x":12023,"y":2670},{"x":24023,"y":1961}], borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-plus TTFU', data: [{"x":98,"y":3418},{"x":398,"y":1409},{"x":773,"y":1073},{"x":1523,"y":2759},{"x":3023,"y":1485},{"x":6023,"y":1662},{"x":12023,"y":2758},{"x":24023,"y":2100}], borderColor: '#2ecc71', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-35B-A3B TTFT', data: [], borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-35B-A3B TTFU', data: [], borderColor: '#f39c12', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus TTFT', data: [{"x":98,"y":807},{"x":398,"y":637},{"x":773,"y":622},{"x":1523,"y":660},{"x":3023,"y":704},{"x":6023,"y":981},{"x":12023,"y":1400},{"x":24023,"y":2036}], borderColor: '#9b59b6', backgroundColor: 'rgba(155,89,182,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#9b59b6', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus TTFU', data: [{"x":98,"y":922},{"x":398,"y":732},{"x":773,"y":751},{"x":1523,"y":799},{"x":3023,"y":774},{"x":6023,"y":1047},{"x":12023,"y":1525},{"x":24023,"y":2205}], borderColor: '#9b59b6', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#9b59b6', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-flash TTFT', data: [{"x":98,"y":329},{"x":398,"y":234},{"x":773,"y":342},{"x":1523,"y":521},{"x":3023,"y":410},{"x":6023,"y":432},{"x":12023,"y":985},{"x":24023,"y":1943}], borderColor: '#1abc9c', backgroundColor: 'rgba(26,188,156,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#1abc9c', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-flash TTFU', data: [{"x":98,"y":353},{"x":398,"y":262},{"x":773,"y":344},{"x":1523,"y":521},{"x":3023,"y":809},{"x":6023,"y":541},{"x":12023,"y":1013},{"x":24023,"y":1954}], borderColor: '#1abc9c', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#1abc9c', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-27B TTFT', data: [], borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e67e22', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-27B TTFU', data: [], borderColor: '#e67e22', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#e67e22', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character TTFT', data: [{"x":95,"y":299},{"x":395,"y":337},{"x":770,"y":419},{"x":1520,"y":463},{"x":3020,"y":529},{"x":6020,"y":749}], borderColor: '#34495e', backgroundColor: 'rgba(52,73,94,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#34495e', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character TTFU', data: [{"x":95,"y":322},{"x":395,"y":346},{"x":770,"y":430},{"x":3020,"y":705},{"x":6020,"y":865}], borderColor: '#34495e', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#34495e', fill: false, tension: 0.3 },] }, options: { ...latencyOpts, plugins: { ...latencyOpts.plugins, title: { display: true, text: 'TTFT (实线) vs TTFU (虚线) vs Input Tokens' } } } });
+new Chart(document.getElementById('c2'), { type: 'line', data: { datasets: [{ label: 'qwen-turbo', data: [{"x":115,"y":87},{"x":415,"y":80},{"x":790,"y":80},{"x":1540,"y":87},{"x":3040,"y":83},{"x":6040,"y":87},{"x":12040,"y":83},{"x":24040,"y":80}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-plus', data: [{"x":111,"y":90},{"x":411,"y":87},{"x":786,"y":90},{"x":1536,"y":90},{"x":3036,"y":90},{"x":6036,"y":93},{"x":12036,"y":90},{"x":24036,"y":67}], borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-plus', data: [{"x":113,"y":100},{"x":413,"y":97},{"x":788,"y":97},{"x":1538,"y":97},{"x":3038,"y":100},{"x":6038,"y":100},{"x":12038,"y":100},{"x":24038,"y":97}], borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-35B-A3B', data: [{"x":100,"y":0},{"x":500,"y":0},{"x":1000,"y":0},{"x":2000,"y":0},{"x":4000,"y":0},{"x":8000,"y":0},{"x":16000,"y":0},{"x":32000,"y":0}], borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus', data: [{"x":113,"y":93},{"x":413,"y":90},{"x":788,"y":90},{"x":1538,"y":90},{"x":3038,"y":87},{"x":6038,"y":93},{"x":12038,"y":87},{"x":24038,"y":87}], borderColor: '#9b59b6', backgroundColor: 'rgba(155,89,182,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#9b59b6', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-flash', data: [{"x":113,"y":90},{"x":413,"y":90},{"x":788,"y":93},{"x":1538,"y":90},{"x":3038,"y":87},{"x":6038,"y":83},{"x":12038,"y":83},{"x":24038,"y":90}], borderColor: '#1abc9c', backgroundColor: 'rgba(26,188,156,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#1abc9c', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-27B', data: [{"x":100,"y":0},{"x":500,"y":0},{"x":1000,"y":0},{"x":2000,"y":0},{"x":4000,"y":0},{"x":8000,"y":0},{"x":16000,"y":0},{"x":32000,"y":0}], borderColor: '#e67e22', backgroundColor: 'rgba(230,126,34,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e67e22', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character', data: [{"x":111,"y":50},{"x":411,"y":57},{"x":786,"y":57},{"x":1536,"y":53},{"x":4000,"y":0},{"x":6038,"y":3},{"x":16000,"y":0},{"x":32000,"y":0}], borderColor: '#34495e', backgroundColor: 'rgba(52,73,94,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#34495e', fill: false, tension: 0.3 }] }, options: { ...ifeOpts, plugins: { ...ifeOpts.plugins, title: { display: true, text: '指令遵循通过率 vs Input Tokens' } } } });
+</script>
+</body>
+</html>

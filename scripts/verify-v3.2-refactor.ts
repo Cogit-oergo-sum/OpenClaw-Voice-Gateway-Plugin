@@ -16,7 +16,7 @@ const CANVAS_LOG = path.join(WORKSPACE, 'logs', 'canvas.jsonl');
 const mockConfig: PluginConfig = {
     zego: { appId: 0, serverSecret: '', aiAgentBaseUrl: '' },
     llm: { provider: 'openai', apiKey: 'sk-mock', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
-    tts: { vendor: 'zego', appId: '', token: '', voiceType: '' },
+    tts: { vendor: 'zego', appId: '', token: '', voiceType: '', resourceId: '' },
     fastAgent: {
         slcModel: 'gpt-4o-mini',
         sleModel: 'gpt-4o'

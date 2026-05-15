@@ -15,11 +15,15 @@ class MockCanvasManager extends EventEmitter {
 async function verifyWatchdogFilter() {
     console.log('--- 🛡️ Starting Watchdog Filter Verification ---');
     const mockManager = new MockCanvasManager() as any;
-    const watchdog = new WatchdogService(mockManager, 'test-instance', 100);
+    const mockMemory = { logEvent: async () => {} } as any;
+    const mockCron = { getDueItems: () => [] } as any;
+    const watchdog = new WatchdogService(mockManager, mockMemory, mockCron, 'test-instance', 100);
 
     const triggered: string[] = [];
-    watchdog.on('trigger', ({ callId, status }) => {
-        triggered.push(`${callId}:${status.status}:${status.importance_score || 0}`);
+    watchdog.on('trigger', ({ callId, tasks }) => {
+        for (const task of tasks) {
+            triggered.push(`${callId}:${task.status}:${task.importance_score || 0}`);
+        }
     });
 
     const testCases: { id: string, status: any, expected: boolean, desc: string }[] = [
@@ -36,6 +40,7 @@ async function verifyWatchdogFilter() {
 
     for (const tc of testCases) {
         mockManager.setCanvas(tc.id, { 
+            tasks: [ { ...tc.status, id: tc.id } ],
             task_status: tc.status, 
             context: { is_busy: false, last_interaction_time: Date.now() } 
         });

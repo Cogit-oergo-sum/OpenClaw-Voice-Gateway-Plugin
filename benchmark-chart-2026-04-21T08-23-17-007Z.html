@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Qwen Benchmark - 2026-04-21</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #fafafa; }
+  h1 { color: #2c3e50; }
+  h2 { color: #34495e; margin-top: 2em; }
+  .chart-box { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin: 1em 0; }
+  table { border-collapse: collapse; width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.9em; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f8f9fa; color: #2c3e50; font-weight: 600; }
+  .sub { color: #7f8c8d; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>Qwen 模型基准测试</h1>
+<p class="sub">生成时间: 4/21/2026, 4:23:17 PM</p>
+
+<h2>TTFT vs TTFU 对比</h2>
+<p class="sub">实线 = TTFT (首Token), 虚线△ = TTFU (首句完整，含句末标点)</p>
+<div class="chart-box"><canvas id="c1"></canvas></div>
+
+<h2>指令遵循通过率 vs Input Tokens</h2>
+<p class="sub">padding 塞在指令前面，模拟长上下文对指令遵循的稀释效应</p>
+<div class="chart-box"><canvas id="c2"></canvas></div>
+
+<h2>指令遵循详情</h2>
+<table>
+  <thead><tr><th>Model</th><th>Input Tokens</th><th>通过/总数</th><th>通过率</th><th>失败项</th></tr></thead>
+  <tbody><tr><td>qwen-turbo</td><td>100</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>500</td><td>9/10</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>1000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>2000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>4000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>8000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>16000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-turbo</td><td>32000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 角色保持</td></tr>
+<tr><td>qwen-plus</td><td>100</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>500</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>1000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>2000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>4000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>8000</td><td>8/10</td><td>80%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 英文回复</td></tr>
+<tr><td>qwen-plus</td><td>16000</td><td>9/10</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字)</td></tr>
+<tr><td>qwen-plus</td><td>32000</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>100</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>500</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>1000</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>2000</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>4000</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>8000</td><td>10/10</td><td>100%</td><td style="color:#e74c3c;font-size:0.85em">-</td></tr>
+<tr><td>qwen3.5-plus</td><td>16000</td><td>9/10</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">英文回复</td></tr>
+<tr><td>qwen3.5-plus</td><td>32000</td><td>9/10</td><td>90%</td><td style="color:#e74c3c;font-size:0.85em">英文回复</td></tr>
+<tr><td>qwen-flash-character</td><td>100</td><td>5/10</td><td>50%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式-嵌套对象, 英文回复, 无markdown包裹, 单选格式, 列表格式(5项)</td></tr>
+<tr><td>qwen-flash-character</td><td>500</td><td>3/10</td><td>30%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, JSON格式-嵌套对象, 字数限制(50字), 英文回复, 无markdown包裹, 单选格式, 列表格式(5项)</td></tr>
+<tr><td>qwen-flash-character</td><td>1000</td><td>4/10</td><td>40%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, JSON格式-嵌套对象, 字数限制(50字), 英文回复, 单选格式, 列表格式(5项)</td></tr>
+<tr><td>qwen-flash-character</td><td>2000</td><td>5/10</td><td>50%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, 字数限制(50字), 英文回复, 无markdown包裹, 单选格式</td></tr>
+<tr><td>qwen-flash-character</td><td>4000</td><td>7/10</td><td>70%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, 英文回复, 列表格式(5项)</td></tr>
+<tr><td>qwen-flash-character</td><td>8000</td><td>2/10</td><td>20%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, 字数限制(50字), 拒绝危险请求, 英文回复, 单选格式, 列表格式(5项), 纯数字输出, 角色保持</td></tr>
+<tr><td>qwen-flash-character</td><td>16000</td><td>0/10</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, JSON格式-嵌套对象, 字数限制(50字), 拒绝危险请求, 英文回复, 无markdown包裹, 单选格式, 列表格式(5项), 纯数字输出, 角色保持</td></tr>
+<tr><td>qwen-flash-character</td><td>32000</td><td>0/10</td><td>0%</td><td style="color:#e74c3c;font-size:0.85em">JSON格式输出, JSON格式-嵌套对象, 字数限制(50字), 拒绝危险请求, 英文回复, 无markdown包裹, 单选格式, 列表格式(5项), 纯数字输出, 角色保持</td></tr></tbody>
+</table>
+
+<script>
+const latencyOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: 'Latency (ms)', font: { size: 13 } }, beginAtZero: true }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + 'ms @ ' + c.parsed.x + ' tokens' } } }
+};
+
+const ifeOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: '通过率 (%)', font: { size: 13 } }, min: 0, max: 100, ticks: { stepSize: 20 } }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + '% @ ' + c.parsed.x + ' tokens' } } }
+};
+
+new Chart(document.getElementById('c1'), { type: 'line', data: { datasets: [
+    { label: 'qwen-turbo TTFT', data: [{"x":99,"y":557},{"x":399,"y":622},{"x":774,"y":349},{"x":1524,"y":395},{"x":3024,"y":460},{"x":6024,"y":619},{"x":12024,"y":931},{"x":24024,"y":1860}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-turbo TTFU', data: [{"x":99,"y":583},{"x":399,"y":677},{"x":774,"y":393},{"x":1524,"y":458},{"x":3024,"y":614},{"x":6024,"y":678},{"x":12024,"y":1243},{"x":24024,"y":1933}], borderColor: '#e74c3c', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-plus TTFT', data: [{"x":95,"y":345},{"x":395,"y":720},{"x":770,"y":361},{"x":1520,"y":397},{"x":3020,"y":495},{"x":6020,"y":634},{"x":12020,"y":1391},{"x":24020,"y":2506}], borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen-plus TTFU', data: [{"x":95,"y":435},{"x":395,"y":805},{"x":770,"y":439},{"x":1520,"y":489},{"x":3020,"y":624},{"x":6020,"y":724},{"x":12020,"y":1477},{"x":24020,"y":2633}], borderColor: '#3498db', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus TTFT', data: [{"x":98,"y":644},{"x":398,"y":553},{"x":773,"y":532},{"x":1523,"y":675},{"x":3023,"y":583},{"x":6023,"y":796},{"x":12023,"y":1156},{"x":24023,"y":2600}], borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus TTFU', data: [{"x":98,"y":748},{"x":398,"y":735},{"x":773,"y":630},{"x":1523,"y":766},{"x":3023,"y":673},{"x":6023,"y":905},{"x":12023,"y":1237},{"x":24023,"y":2689}], borderColor: '#2ecc71', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character TTFT', data: [{"x":95,"y":270},{"x":395,"y":330},{"x":770,"y":361},{"x":1520,"y":467},{"x":3020,"y":502},{"x":6020,"y":664}], borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character TTFU', data: [{"x":95,"y":367},{"x":395,"y":330},{"x":770,"y":373},{"x":3020,"y":502},{"x":6020,"y":676}], borderColor: '#f39c12', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 },] }, options: { ...latencyOpts, plugins: { ...latencyOpts.plugins, title: { display: true, text: 'TTFT (实线) vs TTFU (虚线) vs Input Tokens' } } } });
+new Chart(document.getElementById('c2'), { type: 'line', data: { datasets: [{ label: 'qwen-turbo', data: [{"x":115,"y":80},{"x":415,"y":90},{"x":790,"y":80},{"x":1540,"y":80},{"x":3040,"y":80},{"x":6040,"y":80},{"x":12040,"y":80},{"x":24040,"y":80}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen-plus', data: [{"x":111,"y":80},{"x":411,"y":80},{"x":786,"y":80},{"x":1536,"y":80},{"x":3036,"y":80},{"x":6036,"y":80},{"x":12036,"y":90},{"x":24036,"y":100}], borderColor: '#3498db', backgroundColor: 'rgba(52,152,219,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#3498db', fill: false, tension: 0.3 },
+    { label: 'qwen3.5-plus', data: [{"x":113,"y":100},{"x":413,"y":100},{"x":788,"y":100},{"x":1538,"y":100},{"x":3038,"y":100},{"x":6038,"y":100},{"x":12038,"y":90},{"x":24038,"y":90}], borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#2ecc71', fill: false, tension: 0.3 },
+    { label: 'qwen-flash-character', data: [{"x":111,"y":50},{"x":411,"y":30},{"x":786,"y":40},{"x":1536,"y":50},{"x":3036,"y":70},{"x":6036,"y":20},{"x":16000,"y":0},{"x":32000,"y":0}], borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#f39c12', fill: false, tension: 0.3 }] }, options: { ...ifeOpts, plugins: { ...ifeOpts.plugins, title: { display: true, text: '指令遵循通过率 vs Input Tokens' } } } });
+</script>
+</body>
+</html>

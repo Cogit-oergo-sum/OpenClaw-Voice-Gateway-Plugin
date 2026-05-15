@@ -10,6 +10,8 @@ export class TextCleaner {
     static decant(text: string): string {
         if (!text) return "";
         return text
+            .replace(/<shadow>/g, '')
+            .replace(/<\/shadow>/g, '')
             .replace(/##+\s/g, '')           // 移除标题前缀 ##
             .replace(/\*\*/g, '')            // 移除加粗 **
             .replace(/\*/g, '')              // 移除标记 *
@@ -36,6 +38,8 @@ export class TextCleaner {
      */
     static clean(text: string): string {
         return text
+            .replace(/<shadow>/g, '')
+            .replace(/<\/shadow>/g, '')
             .replace(/\(已.*?闭环\)/g, '')
             .replace(/\(已.*?同步.*?\)/g, '')
             .replace(/\[调用.*?\]/g, '')
@@ -43,5 +47,72 @@ export class TextCleaner {
             .replace(/HEARTBEAT_OK/g, '')
             .replace(/session_start/g, '')
             .trim();
+    }
+
+    /**
+     * [V4.5] ACTION 协议后处理
+     * - 剥离当前模式白名单外的 ACTION
+     * - 去除连续重复 ACTION
+     * - 限制单轮最多 1 个 ACTION
+     */
+    static filterActions(text: string, currentMode: string, previousActions: string[] = []): string {
+        // 各模式允许的 ACTION 白名单
+        const MODE_ACTION_WHITELIST: Record<string, string[]> = {
+            zego_intro: ['SHOW_PAGE', 'JUMP_TO_URL'],
+            discovery: ['SHOW_PAGE', 'JUMP_TO_URL'],
+            solution: ['SHOW_PAGE', 'JUMP_TO_URL', 'SHOW_DOC_URL'],
+            integration_guide: ['SHOW_PAGE', 'SHOW_DOC_URL', 'JUMP_TO_URL', 'POPUP_LEAD_FORM'],
+            conversion: ['SHOW_PAGE', 'SHOW_DOC_URL', 'POPUP_LEAD_FORM', 'JUMP_TO_URL'],
+            end_session: [],  // end_session 阶段禁止所有 ACTION
+        };
+
+        const whitelist = MODE_ACTION_WHITELIST[currentMode] || [];
+        const actionRegex = /\[ACTION:([^\]]+)\]/g;
+        const actions: { full: string; name: string }[] = [];
+        let match;
+
+        while ((match = actionRegex.exec(text)) !== null) {
+            actions.push({ full: match[0], name: match[1].split(':')[0].split(',')[0] });
+        }
+
+        if (actions.length === 0) return text;
+
+        let result = text;
+
+        // 1. 剥离白名单外的 ACTION
+        for (const action of actions) {
+            if (!whitelist.includes(action.name)) {
+                result = result.replace(action.full, '');
+            }
+        }
+
+        // 2. 去除与上一轮重复的 ACTION
+        const remainingActions: { full: string; name: string }[] = [];
+        const newActionRegex = /\[ACTION:([^\]]+)\]/g;
+        while ((match = newActionRegex.exec(result)) !== null) {
+            remainingActions.push({ full: match[0], name: match[1] });
+        }
+
+        for (const action of remainingActions) {
+            if (previousActions.includes(action.name)) {
+                result = result.replace(action.full, '');
+            }
+        }
+
+        // 3. 限制单轮最多 1 个 ACTION（保留第一个，删除其余）
+        const finalActions: { full: string; name: string }[] = [];
+        const finalRegex = /\[ACTION:([^\]]+)\]/g;
+        while ((match = finalRegex.exec(result)) !== null) {
+            finalActions.push({ full: match[0], name: match[1] });
+        }
+
+        if (finalActions.length > 1) {
+            // 保留第一个，删除其余
+            for (let i = 1; i < finalActions.length; i++) {
+                result = result.replace(finalActions[i].full, '');
+            }
+        }
+
+        return result.replace(/\s{2,}/g, ' ').trim();
     }
 }

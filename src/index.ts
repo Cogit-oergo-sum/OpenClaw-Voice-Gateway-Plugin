@@ -36,7 +36,8 @@ export function register(api: PluginAPI, config: PluginConfig = {} as any) {
     console.log('[VoiceGateway] Registering Plugin with Config:', config);
 
     // 1. 初始化通话状态机和 ZEGO API Client
-    const workspaceRoot = resolveWorkspacePath(config?.advanced?.httpAuthToken === 'none' ? './demo_workspace' : undefined);
+    // [V4.1] 去掉 httpAuthToken 条件判断，始终使用环境变量解析 workspace
+    const workspaceRoot = resolveWorkspacePath();
     const callManager = new CallManager(config || {} as any);
 
     // 初始化 FastAgent (注入环境变量中的专属 Fast Agent 配置，独立于 OpenClaw)
@@ -44,16 +45,18 @@ export function register(api: PluginAPI, config: PluginConfig = {} as any) {
         ...(config || {}),
         llm: {
             provider: config?.llm?.provider || 'bailian',
-            apiKey: process.env.FAST_AGENT_API_KEY || process.env.BAILIAN_API_KEY || config?.llm?.apiKey || '',
-            baseUrl: process.env.FAST_AGENT_BASE_URL || process.env.BAILIAN_BASE_URL || config?.llm?.baseUrl || '',
-            model: process.env.FAST_AGENT_MODEL || process.env.BAILIAN_MODEL || config?.llm?.model || 'qwen-plus'
+            apiKey: process.env.BAILIAN_API_KEY || config?.llm?.apiKey || '',
+            baseUrl: process.env.BAILIAN_BASE_URL || config?.llm?.baseUrl || '',
+            model: process.env.SLE_MODEL || process.env.BAILIAN_MODEL || config?.llm?.model || 'qwen-plus'
         },
         fastAgent: {
-            version: process.env.FAST_AGENT_VERSION || config?.fastAgent?.version || 'v2',
-            slcModel: process.env.FAST_AGENT_SLC_MODEL || 'qwen-turbo',
-            sleModel: process.env.FAST_AGENT_SLE_MODEL || process.env.FAST_AGENT_MODEL || 'qwen-plus',
-            slcBaseUrl: config?.fastAgent?.slcBaseUrl,
-            sleBaseUrl: config?.fastAgent?.sleBaseUrl
+            version: process.env.FAST_AGENT_VERSION || config?.fastAgent?.version || 'v3',
+            slcModel: process.env.SLC_MODEL || 'qwen-flash-character',
+            routerModel: process.env.ROUTER_MODEL || 'qwen-turbo',
+            sleModel: process.env.SLE_MODEL || 'qwen-plus',
+            slcBaseUrl: process.env.SLC_BASE_URL || process.env.BAILIAN_BASE_URL,
+            slcApiKey: process.env.SLC_API_KEY || undefined,
+            sleBaseUrl: process.env.BAILIAN_BASE_URL
         }
     }, workspaceRoot, callManager);
 
@@ -112,17 +115,22 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
         }
     })();
 
-    // [Dynamic Tunnel Detection] 优先从系统日志动态取回最新的 Pinggy 地址
+    // [Dynamic Tunnel Detection] 优先从系统日志动态取回最新的隧道地址
+    // 日志路径已分离: Cloudflare → /tmp/cloudflare_tunnel.log, Pinggy → /tmp/pinggy_tunnel.log
     let publicBase = process.env.PUBLIC_URL;
     if (!publicBase) {
         try {
             const fs = require('fs');
-            if (fs.existsSync('/tmp/tunnel.log')) {
-                const content = fs.readFileSync('/tmp/tunnel.log', 'utf-8');
-                const matches = content.match(/https:\/\/[a-z0-9.-]+\.pinggy\.link/g);
-                if (matches && matches.length > 0) {
-                    publicBase = matches[matches.length - 1];
-                    console.log(`[VoiceGateway] 🚀 Auto-detected tunnel URL from /tmp/tunnel.log: ${publicBase}`);
+            const tunnelLogs = ['/tmp/cloudflare_tunnel.log', '/tmp/pinggy_tunnel.log', '/tmp/tunnel.log'];
+            for (const logPath of tunnelLogs) {
+                if (fs.existsSync(logPath)) {
+                    const content = fs.readFileSync(logPath, 'utf-8');
+                    const matches = content.match(/https:\/\/[a-z0-9.-]+\.(trycloudflare\.com|pinggy\.link)/g);
+                    if (matches && matches.length > 0) {
+                        publicBase = matches[matches.length - 1];
+                        console.log(`[VoiceGateway] Auto-detected tunnel URL from ${logPath}: ${publicBase}`);
+                        break;
+                    }
                 }
             }
         } catch (e) {
@@ -130,8 +138,8 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
         }
     }
     
-    // Final fallback if detection fails
-    publicBase = publicBase || 'https://txasd-2602-feda-f30f-1eca-da8b-1ca7-7763-ba0d.a.free.pinggy.link';
+    // Final fallback if detection fails (will be replaced by tunnel)
+    publicBase = publicBase || 'https://fallback.trycloudflare.com';
     const myLlmUrl = `${publicBase}/voice-gateway/chat/completions`;
 
     console.log(`[VoiceGateway] Registering Agent with Callback URL: ${myLlmUrl}`);
@@ -145,10 +153,11 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
             baseUrl: process.env.BAILIAN_BASE_URL || config?.llm?.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
         },
         tts: {
-            vendor: config?.tts?.vendor || 'ByteDance',
+            vendor: process.env.TTS_VENDOR || config?.tts?.vendor || 'ByteDanceFlowing',
             appId: config?.tts?.appId || 'zego_test',
             token: config?.tts?.token || 'zego_test',
-            voiceType: config?.tts?.voiceType || 'zh_female_wanwanxiaohe_moon_bigtts'
+            voiceType: process.env.TTS_VOICE_TYPE || config?.tts?.voiceType || 'zh_female_zhixingnvsheng_mars_bigtts',
+            resourceId: process.env.TTS_RESOURCE_ID || config?.tts?.resourceId || 'seed-tts-2.0'
         },
         asr: config?.asr
     };
@@ -178,7 +187,7 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
             const fs = require('fs');
             if (fs.existsSync('/tmp/tunnel.log')) {
                 const content = fs.readFileSync('/tmp/tunnel.log', 'utf-8');
-                const matches = content.match(/https:\/\/[a-z0-9.-]+\.pinggy\.link/g);
+                const matches = content.match(/https:\/\/[a-z0-9.-]+\.(pinggy\.link|trycloudflare\.com)/g);
                 if (matches && matches.length > 0) {
                     const newPublicBase = matches[matches.length - 1];
                     // 如果公网地址发生漂移（隧道重启），则立即重注册
@@ -291,7 +300,8 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
                 startTime: Date.now(),
                 metadata: {}
             }, async () => {
-                await chatCompletionsHandler(callManager, config, fastAgent)(req, res);
+                // [V3.7.3] 传递 notificationBus 以支持语音对话的 trace/perf 通知
+                await chatCompletionsHandler(callManager, config, fastAgent, notificationBus)(req, res);
             });
         }
     });
@@ -372,6 +382,26 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
     });
 
     // 🚀 [New] 仿真背景消息总线 (用于测试面板异步接收任务结果)
+
+    // [V4.1] 模式信息 API（前端初始化时调用，获取当前 workspace 的 mode 列表和初始 mode）
+    api.registerHttpRoute({
+        path: '/voice/mode-info',
+        match: 'GET',
+        auth: config.advanced?.httpAuthToken || 'none',
+        handler: async (req, res) => {
+            try {
+                const modeInfo = (fastAgent as any).getModeInfo?.();
+                if (modeInfo) {
+                    res.json(modeInfo);
+                } else {
+                    res.json({ initialMode: '', modes: [] });
+                }
+            } catch (e: any) {
+                res.status(500).json({ error: e.message });
+            }
+        }
+    });
+
     api.registerHttpRoute({
         path: '/voice/internal/notify',
         match: 'POST',
@@ -413,6 +443,13 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
 
             const onNotify = (data: any) => {
                 if (data.sessionId === sessionId) {
+                    // [V3.7.3] perf_report 直接透传，不经过协议头解析
+                    if (data.type === 'perf_report') {
+                        console.log(`[SSE][${sessionId}] Delivering perf_report: TTFT=${data.perf?.ttft}ms, trace=${data.trace?.join(' → ')}`);
+                        res.write(`data: ${JSON.stringify({ type: 'perf_report', trace: data.trace, perf: data.perf })}\n\n`);
+                        return;
+                    }
+
                     let type = 'notification';
                     let content = data.text;
 
@@ -426,7 +463,7 @@ description: 掌握如何接管、查询和主动通过外呼电话与用户进�
                     }
 
                     console.log(`[SSE][${sessionId}] Delivering ${type}: ${content.substring(0, 20)}...`);
-                    res.write(`data: ${JSON.stringify({ type, content, trace: data.trace })}\n\n`);
+                    res.write(`data: ${JSON.stringify({ type, content, trace: data.trace, perf: data.perf })}\n\n`);
                 }
             };
 

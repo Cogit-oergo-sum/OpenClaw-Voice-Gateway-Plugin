@@ -4,10 +4,26 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { TextCleaner } from '../utils/text-cleaner';
 
+/**
+ * [V1.6.0] ShadowState: 会话级影子状态
+ * [V4.1] metadata 扩展支持模式切换相关字段：
+ * - current_mode: 当前模式名称
+ * - mode_pending_injection: 待注入的模式（切换后下一轮注入）
+ * - mode_injected: 已注入的模式（标记已注入）
+ * - switch_context: 模式切换时携带的上下文信息
+ */
 export interface ShadowState {
     mode: string;
     task_id?: string;
     progress?: string;
+    /**
+     * metadata 扩展字段：
+     * - compact_persona: 高密度人设快照
+     * - current_mode: [V4.1] 当前模式名称
+     * - mode_pending_injection: [V4.1] 待注入的模式
+     * - mode_injected: [V4.1] 已注入的模式
+     * - switch_context: [V4.1] 模式切换携带的上下文
+     */
     metadata: Record<string, any>;
     lastUpdated: number;
 }
@@ -50,17 +66,17 @@ export class ShadowManager {
     /**
      * 原子更新影子状态 (WAL 优先)
      */
-    async updateState(patch: Partial<ShadowState>) {
-        const callId = getCurrentCallId() || 'global';
-        const state = this.getScopedState();
+    async updateState(patch: Partial<ShadowState>, callId?: string) {
+        const targetCallId = callId || getCurrentCallId() || 'global';
+        const state = this.getOrCreateState(targetCallId);
 
         // 1. WAL: 预写日志追加
         const logEntry = {
             timestamp: Date.now(),
             patch,
-            callId
+            callId: targetCallId
         };
-        const walFile = `states/${callId}.wal`;
+        const walFile = `states/${targetCallId}.wal`;
         await appendWorkspaceFile(this.workspaceRoot, walFile, JSON.stringify(logEntry) + '\n');
 
         // 2. 更新内存
@@ -70,11 +86,11 @@ export class ShadowManager {
         Object.assign(state, { ...patch, metadata: state.metadata, lastUpdated: Date.now() });
 
         // 3. 检查 Checkpoint
-        const currentCount = (this.walCount.get(callId) || 0) + 1;
-        this.walCount.set(callId, currentCount);
+        const currentCount = (this.walCount.get(targetCallId) || 0) + 1;
+        this.walCount.set(targetCallId, currentCount);
 
         if (currentCount >= this.MAX_WAL_ENTRIES) {
-            await this.checkpoint(callId);
+            await this.checkpoint(targetCallId);
         }
     }
 

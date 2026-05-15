@@ -1,12 +1,14 @@
 import { CallManager } from '../call/call-manager';
 import type { PluginConfig } from '../types/config';
 import { IFastAgent, FastAgentResponse } from '../agent/types';
+import { EventEmitter } from 'events';
 
 /**
- * [V1.6.0] chatCompletionsHandler: 
+ * [V1.6.0] chatCompletionsHandler:
  * 桥接 ZEGO 与 FastAgent Parallel Relay 引擎
+ * [V3.7.3] 增加 notificationBus 参数，用于发送 trace/perf 通知
  */
-export function chatCompletionsHandler(manager: CallManager, config: PluginConfig, fastAgent: IFastAgent) {
+export function chatCompletionsHandler(manager: CallManager, config: PluginConfig, fastAgent: IFastAgent, notificationBus?: EventEmitter) {
     return async (req: any, res: any) => {
         if (req.method === 'GET') {
             return res.send('[VoiceGateway] /chat/completions is online.');
@@ -14,11 +16,12 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
 
         const startTime = Date.now();
         const requestID = Math.random().toString(36).substring(7);
-        
+
         try {
             const { messages, agent_info } = req.body;
             const instanceId = agent_info?.agent_instance_id;
-            
+            const roundId = agent_info?.round_id; // [V3.7.4] 获取 ZEGO 提供的轮次 ID
+
             // 找回当前通话状态 (用于对话持久化)
             let currentCallState = null;
             if (instanceId) {
@@ -47,10 +50,12 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
             console.log(`[chatCompletionsHandler] [REQ_${requestID}] Routing to FastAgent. Input: "${userText}"`);
 
             let fullReply = "";
+            // [V3.7.3] 记录 sessionId 用于发送 perf_report
+            const perfSessionId = instanceId || currentCallState?.userId || 'voice-session';
 
             await fastAgent.process(userText, (chunk: FastAgentResponse) => {
                 let openaiContent = "";
-                
+
                 switch(chunk.type) {
                     case 'filler':
                     case 'text':
@@ -58,16 +63,15 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                     case 'internal':
                     case 'idle':
                     case 'waiting':
-                        // 1. 基础清理: 移除 Markdown 符号及所有换行符（防止换行导致字幕被切割成多条消息）
-                        openaiContent = chunk.content.replace(/[\*#>`~\n\r]/g, '');
-                        // [V1.8.1] 移除强制换行逻辑，确保全量内容归拢在单条消息字幕中，解决部分 UI 下显示不完全的问题
+                        openaiContent = chunk.content;
+                        // [V1.8.1] Markdown 清理已移除，改由提示词约束 LLM 不输出 Markdown 符号
                         break;
                     case 'bridge':
                         // 发送一个空格占位，驱动 ZEGO TTS 引擎提前进入就绪状态
                         openaiContent = " ";
                         break;
                     case 'thought':
-                        return; 
+                        return;
                 }
 
                 if (openaiContent) {
@@ -76,6 +80,17 @@ export function chatCompletionsHandler(manager: CallManager, config: PluginConfi
                         choices: [{ delta: { content: openaiContent }, finish_reason: null }]
                     };
                     res.write(`data: ${JSON.stringify(payload)}\n\n`);
+                }
+
+                // [V3.7.3] 响应结束时发送 trace/perf 通知 (用于语音对话的延迟展示)
+                if (chunk.isFinal && chunk.trace && chunk.perf && notificationBus) {
+                    console.log(`[chatCompletionsHandler] Sending perf_report for session: ${perfSessionId}`);
+                    notificationBus.emit('notify', {
+                        sessionId: perfSessionId,
+                        type: 'perf_report',
+                        trace: chunk.trace,
+                        perf: chunk.perf
+                    });
                 }
             }, async (notifyText) => {
                 // [异步通知] 当后台任务（超过5s）完成时，主动通过 ZEGO TTS 和 Context Message 触达用户

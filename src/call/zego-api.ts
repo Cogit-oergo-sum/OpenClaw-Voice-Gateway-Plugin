@@ -1,6 +1,34 @@
 import { generateZegoAuth } from './zego-auth';
 import type { ZegoConfig, LlmConfig, AsrConfig, TtsConfig } from '../types/config';
 
+const TTS_FILTER_TEXT = [
+    { BeginCharacters: "（", EndCharacters: "）" },
+    { BeginCharacters: "[", EndCharacters: "]" },
+    { BeginCharacters: "【", EndCharacters: "】" }
+];
+
+function buildTtsConfig(tts: TtsConfig): any {
+    if (tts.vendor === 'Minimax') {
+        return {
+            Vendor: "Minimax",
+            Params: {
+                app: { api_key: tts.appId },
+                model: tts.resourceId,
+                voice_setting: { voice_id: tts.voiceType }
+            },
+            FilterText: TTS_FILTER_TEXT
+        };
+    }
+    return {
+        Vendor: "ByteDanceFlowing",
+        Params: {
+            app: { appid: tts.appId, token: tts.token, resource_id: tts.resourceId },
+            req_params: { speaker: tts.voiceType }
+        },
+        FilterText: TTS_FILTER_TEXT
+    };
+}
+
 interface RegisterAgentParams {
     llmUrl: string;
     llm: LlmConfig;
@@ -81,13 +109,7 @@ export class ZegoApiClient {
                 BaseUrl: params.llm.baseUrl,
                 AddAgentInfo: true
             },
-            TTS: {
-                Vendor: params.tts.vendor,
-                Params: {
-                    app: { appid: params.tts.appId, token: params.tts.token, cluster: "volcano_tts" },
-                    audio: { voice_type: params.tts.voiceType }
-                }
-            }
+            TTS: buildTtsConfig(params.tts)
         };
 
         if (params.asr) {
@@ -117,13 +139,7 @@ export class ZegoApiClient {
                 BaseUrl: params.llm.baseUrl,
                 AddAgentInfo: true
             },
-            TTS: {
-                Vendor: params.tts.vendor,
-                Params: {
-                    app: { appid: params.tts.appId, token: params.tts.token, cluster: "volcano_tts" },
-                    audio: { voice_type: params.tts.voiceType }
-                }
-            }
+            TTS: buildTtsConfig(params.tts)
         };
 
         if (params.asr) {

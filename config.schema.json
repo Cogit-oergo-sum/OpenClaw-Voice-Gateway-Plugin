@@ -56,7 +56,7 @@
             "properties": {
                 "vendor": {
                     "type": "string",
-                    "default": "ByteDance"
+                    "default": "ByteDanceFlowing"
                 },
                 "appId": {
                     "type": "string"
@@ -66,7 +66,11 @@
                 },
                 "voiceType": {
                     "type": "string",
-                    "default": "zh_female_wanwanxiaohe_moon_bigtts"
+                    "default": "zh_female_zhixingnvsheng_mars_bigtts"
+                },
+                "resourceId": {
+                    "type": "string",
+                    "default": "seed-tts-2.0"
                 }
             },
             "required": [

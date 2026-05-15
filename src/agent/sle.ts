@@ -32,16 +32,17 @@ export class SLEEngine {
     async run(
         messages: any[],
         text: string,
-        current_intent: string, 
+        current_intent: string,
         promptAssembler: PromptAssembler,
         callId: string,
         canvasSnapshot: string,
         canvasManager: CanvasManager,
         onChunk: (resp: FastAgentResponse) => void,
         signal: { interrupted: boolean; slcDone: boolean },
-        source: string = 'User-Input', // [V3.6.10] 增加来源标注
-        scenario: import('./types').SLEScenario = 'DECIDING', // [V3.6.17] 动态场景支持
-        taskId?: string // [V3.6.21] 任务追踪 ID
+        source: string = 'User-Input',
+        scenario: import('./types').SLEScenario = 'DECIDING',
+        taskId?: string,
+        tracker?: any  // [V3.7.2] 耗时追踪
     ): Promise<{ output: string; toolCalls: any[]; intent: string; parsed?: any }> {
         const canvas = canvasManager.getCanvas(callId);
         const sleModel = this.config.fastAgent?.sleModel || this.config.llm.model;
@@ -51,13 +52,17 @@ export class SLEEngine {
         let parsed: any = null;
 
         try {
-            // [V3.6.0] 消费场景 B (DECIDING) 专用 Payload，不再依赖 fullSoul
+            let taskOutput = (taskId ? (canvas.tasks.find(t => t.id === taskId) || canvas.task_status) : canvas.task_status)?.summary;
+            if (scenario === 'DECIDING' && !taskOutput && current_intent) {
+                taskOutput = `[Intent] ${current_intent}`;
+            }
+
             const sleMessages = await promptAssembler.assembleSLEPayload(scenario, callId, {
                 text,
                 current_intent,
                 canvasSnapshot,
                 dialogueHistory: messages.slice(0, -1),
-                taskOutput: canvas.task_status.summary, // [V3.6.17] 传递任务结果供 SUMMARIZING 使用
+                taskOutput,
                 taskIntent: current_intent
             });
 
@@ -65,22 +70,29 @@ export class SLEEngine {
             const availableTools = SkillRegistry.getInstance().getAllSchemas();
 
             const isInternal = text === '__INTERNAL_TRIGGER__';
+            const hasTools = availableTools.length > 0 && !isInternal;
             const payload: any = {
                 model: sleModel,
                 messages: sleMessages,
                 stream: false,
                 parallel_tool_calls: true,
-                response_format: { type: 'json_object' }
             };
 
+            // [V4.5] response_format: json_object 与 tools + tool_choice 冲突（qwen 模型 400 报错）
+            // 有 tools 时由模型自行决定输出格式；无 tools 时强制 JSON 以便解析 intent
+            if (!hasTools) {
+                payload.response_format = { type: 'json_object' };
+            }
+
             // [V3.6.17] 核心保护：如果是内部触发指令 (Reporting)，严禁提供工具描述，强制模型仅进行事实总结
-            if (availableTools.length > 0 && !isInternal) {
+            if (hasTools) {
                 payload.tools = availableTools;
                 payload.tool_choice = 'auto';
             }
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000); // [V3.6.4] SLE 超时放宽至 8s
+            const timeout = scenario === 'REFINING' ? 30000 : 12000; // [V3.7.1] 人设提炼与大意图逻辑放宽超时
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
 
             const response = (await this.openai.chat.completions.create(payload, { signal: controller.signal })) as any;
             clearTimeout(timeoutId);
@@ -90,7 +102,7 @@ export class SLEEngine {
 
             // [V3.6.10] 记录审计日志
             // [修正] 严格记录当前的运行场景，不再使用默认 fallback 以防混淆
-            LlmLogger.log({ source, scenario, callId, model: sleModel }, sleMessages as any[], content);
+            LlmLogger.log({ source, scenario, callId, model: sleModel }, sleMessages as any[], content, (response as any).usage as any);
 
             if (content) {
                 try {
@@ -112,36 +124,22 @@ export class SLEEngine {
                 toolCalls = message.tool_calls;
             }
 
-            // [V3.6.15] 容错修复：如果模型在 JSON 中设定了 intent，但没有产生 tool_calls，
-            // 且该 intent 准确命中了一个长耗时技能名称，则执行手动逻辑补全，防止任务卡死。
-            // [V3.6.19修复] 严禁在 SUMMARIZING 场景下触发自动补全，防止摘要事实被误判为新任务意图。
+            // [V3.7] 确定性绑定：当模型明确设置了意图（intent）但忘记生成 tool_calls 时，
+            // 依据受控注册表执行强绑定。这从根本上解决了并发子路中模型输出不稳定的问题。
             if (!toolCalls.length && sleIntent && scenario !== 'SUMMARIZING' && !isInternal) {
                 const registry = SkillRegistry.getInstance();
                 const skill = registry.getSkill(sleIntent);
-                if (skill) {
-                    console.warn(`[SLE Engine] ⚠️ Model missed native tool_call but set intent: ${sleIntent}. Auto-repairing...`);
-                    // [V3.6.16] 参数映射调优：依据 Skill Schema 自动提取字段名，优先使用对话原文弥补参数缺位
-                    const required = skill.parameters?.required || [];
-                    const props = skill.parameters?.properties || {};
-
-                    // [V3.6.26] 只有当工具仅需 1 个参数时，才由于模型失误进行自动补救
-                    if (required.length === 1) {
-                        const repairKey = required[0];
-                        const repairArgs = { [repairKey]: text };
-
-                        // 构造一个拟态 tool_call
-                        toolCalls = [{
-                            id: 'repair-' + Math.random().toString(36).substring(7),
-                            type: 'function',
-                            function: {
-                                name: sleIntent,
-                                arguments: JSON.stringify(repairArgs) 
-                            }
-                        }];
-                    } else {
-                        // 如果工具需要多个核心参数（如 ASR 纠错），严禁盲目自动填充，防止产生 undefined 覆盖
-                        console.warn(`[SLE Engine] ⚠️ Tool ${sleIntent} requires multiple parameters (${required.join(',')}), auto-repair skipped to prevent undefined payload.`);
-                    }
+                if (skill && skill.parameters?.required?.length === 1) {
+                    const argKey = skill.parameters.required[0];
+                    toolCalls = [{
+                        id: `bind-${Math.random().toString(36).substring(7)}`,
+                        type: 'function',
+                        function: {
+                            name: sleIntent,
+                            arguments: JSON.stringify({ [argKey]: text })
+                        }
+                    }];
+                    console.log(`[SLE Engine][${callId}] 🔗 Intent Bound: ${sleIntent}`);
                 }
             }
 
@@ -156,7 +154,7 @@ export class SLEEngine {
             if (toolCalls.length > 0) {
                 await this.toolResultHandler.handleToolCalls(
                     toolCalls.filter(tc => tc !== undefined),
-                    text, callId, canvas, canvasManager, taskId
+                    text, callId, canvas, canvasManager, taskId, tracker  // [V3.7.2] 传递 tracker
                 );
             }
         } catch (e: any) {

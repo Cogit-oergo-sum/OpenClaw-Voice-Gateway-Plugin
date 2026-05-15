@@ -1,24 +1,76 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { WorkspaceConfig } from '../types/config';
 
 /**
- * 确定 OpenClaw Workspace 的根目录路径
- * 优先级: 传入配置 -> 环境变量 OPENCLAW_PROFILE -> 默认 ~/.openclaw/workspace/
+ * [V4.0] 确定 Workspace 的根目录路径
+ * 优先级: 传入配置 -> 环境变量 -> 默认值
+ *
+ * 环境变量支持（向后兼容）：
+ * - VOICE_GATEWAY_WORKSPACE (推荐)
+ * - OPENCLAW_PROFILE (向后兼容)
+ * - OPENCLAW_WORKSPACE (向后兼容)
  */
-export function resolveWorkspacePath(configProfilePath?: string): string {
-    // 优先级 1: 环境变量 OPENCLAW_PROFILE (标准 OpenClaw 指定)
+export function resolveWorkspacePath(config?: WorkspaceConfig | string): string {
+    // 优先级 1: 直接传入路径字符串
+    if (typeof config === 'string' && config) {
+        return path.resolve(config);
+    }
+
+    // 优先级 2: 配置对象中的路径
+    if (config && typeof config === 'object' && config.path) {
+        return path.resolve(config.path);
+    }
+
+    // 优先级 3: 环境变量 VOICE_GATEWAY_WORKSPACE (推荐)
+    if (process.env.VOICE_GATEWAY_WORKSPACE) {
+        return path.resolve(process.env.VOICE_GATEWAY_WORKSPACE);
+    }
+
+    // 优先级 4: 环境变量 OPENCLAW_PROFILE (向后兼容)
     if (process.env.OPENCLAW_PROFILE) {
         return path.resolve(process.env.OPENCLAW_PROFILE);
     }
-    // 优先级 2: 环境变量 OPENCLAW_WORKSPACE (旧版或自定义覆盖)
+
+    // 优先级 5: 环境变量 OPENCLAW_WORKSPACE (向后兼容)
     if (process.env.OPENCLAW_WORKSPACE) {
         return path.resolve(process.env.OPENCLAW_WORKSPACE);
     }
-    // 优先级 3: 配置传入路径 (如 ./demo_workspace)
-    if (configProfilePath) {
-        return path.resolve(configProfilePath);
+
+    // 优先级 6: 默认路径 - 项目相对目录或通用路径
+    // 尝试使用当前工作目录下的 workspace
+    const cwdWorkspace = path.join(process.cwd(), 'workspace');
+    if (fs.existsSync(cwdWorkspace)) {
+        return cwdWorkspace;
     }
+
+    // 最终默认: 用户目录下的 zego-rtai-agent/workspace
+    return path.join(os.homedir(), 'zego-rtai-agent', 'workspace');
+}
+
+/**
+ * [V4.1] 确定 openClaw Workspace 的根目录路径
+ * 用于 personaSource/dialogueSource=openclaw 时的人设文件和对话记录路径
+ *
+ * 优先级: 环境变量 -> 默认值
+ *
+ * 环境变量支持：
+ * - OPENCLAW_WORKSPACE (推荐)
+ * - OPENCLAW_PROFILE (向后兼容)
+ */
+export function resolveOpenClawPath(): string {
+    // 优先级 1: 环境变量 OPENCLAW_WORKSPACE
+    if (process.env.OPENCLAW_WORKSPACE) {
+        return path.resolve(process.env.OPENCLAW_WORKSPACE);
+    }
+
+    // 优先级 2: 环境变量 OPENCLAW_PROFILE
+    if (process.env.OPENCLAW_PROFILE) {
+        return path.resolve(process.env.OPENCLAW_PROFILE);
+    }
+
+    // 默认路径: ~/.openclaw/workspace
     return path.join(os.homedir(), '.openclaw', 'workspace');
 }
 

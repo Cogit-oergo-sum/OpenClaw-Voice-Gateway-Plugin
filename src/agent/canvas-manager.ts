@@ -21,6 +21,7 @@ export class CanvasManager {
             this.canvases.set(callId, {
                 env: { time: '', weather: 'Unknown' },
                 task_status: { status: 'PENDING', taskId: '', version: Date.now(), current_progress: 0, importance_score: 0, is_delivered: false, summary: '' },
+                tasks: [],
                 context: { last_spoken_fragment: '', interrupted: false, last_interaction_time: Date.now(), is_busy: false, idle_trigger_count: 0 }
             });
         }
@@ -45,49 +46,158 @@ export class CanvasManager {
         return CanvasStorage.getEvents(this.logDir, callId);
     }
 
-    async appendCanvasAudit(callId: string, summary: any, status: 'READY' | 'PENDING' | 'COMPLETED' | 'FAILED' = 'READY', is_delivered: boolean = false, taskId?: string) {
+    /**
+     * [V3.7] 创建新任务并返回其唯一 ID
+     */
+    createTask(callId: string, name: string): string {
         const canvas = this.getCanvas(callId);
+        const taskId = `t_${Math.random().toString(36).substring(2, 6)}`;
+        const newTask: any = {
+            id: taskId,
+            name,
+            status: 'PENDING',
+            summary: '',
+            importance_score: 1.0,
+            is_delivered: false,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            version: Date.now(),
+            // [V3.10] 新增字段初始化
+            tool_agent_id: undefined,
+            pending_questions: []
+        };
+        canvas.tasks.push(newTask);
         
-        // [V3.6.21] 任务有效性校验：若传入 taskId，必须与当前活跃 taskId 一致，否则判定为“过时状态”丢弃，防止结果 clobber
-        if (taskId && canvas.task_status.taskId && taskId !== canvas.task_status.taskId) {
-            console.warn(`[CanvasManager][${callId}] ⚠️ Attempted clobber detected. Task ${taskId} is no longer active. Current: ${canvas.task_status.taskId}`);
+        // [兼容性] 同步重写旧版 task_status，作为当前活跃任务
+        canvas.task_status = { ...newTask, taskId, current_progress: 0 };
+        
+        console.log(`[CanvasManager][${callId}] 🚀 Task Created: ${name} (ID: ${taskId})`);
+        return taskId;
+    }
+
+    getTask(callId: string, taskId: string) {
+        const canvas = this.getCanvas(callId);
+        return canvas.tasks.find(t => t.id === taskId);
+    }
+
+    /**
+     * [V3.7] 精确更新指定 ID 的 TaskItem
+     */
+    async updateTask(callId: string, taskId: string, data: any) {
+        const canvas = this.getCanvas(callId);
+        const task = canvas.tasks.find(t => t.id === taskId);
+        
+        if (!task) {
+            console.warn(`[CanvasManager][${callId}] ⚠️ Attempted to update non-existent task: ${taskId}`);
+            // 如果旧代码调用 appendCanvasAudit 且未传 taskId，或者 taskId 找不到，退回到更新活跃任务逻辑
+            if (canvas.task_status.taskId === taskId || !taskId) {
+                this.legacySyncOldTaskStatus(canvas, data);
+            }
             return;
         }
 
-        if (typeof summary === 'string') {
-            canvas.task_status.summary = summary;
-            canvas.task_status.direct_response = summary;
-        } else {
-            canvas.task_status.direct_response = summary.direct_response;
-            canvas.task_status.extended_context = summary.extended_context;
-            canvas.task_status.summary = `${summary.direct_response}\n${summary.extended_context}`;
-            
-            // [V3.6.4] 职责下放：如果摘要携带了状态判定，则以此为准
-            if (summary.status) {
-                status = summary.status;
-            }
-            if (typeof summary.importance_score === 'number' && summary.importance_score > 0) {
-                canvas.task_status.importance_score = summary.importance_score;
+        // 处理 summary 格式兼容
+        if (typeof data.summary === 'string') {
+            task.summary = data.summary;
+            task.direct_response = data.summary;
+        } else if (data.summary) {
+            task.direct_response = data.summary.direct_response;
+            task.extended_context = data.summary.extended_context;
+            task.summary = `${data.summary.direct_response}\n${data.summary.extended_context}`;
+            if (data.summary.status) task.status = data.summary.status;
+            if (typeof data.summary.importance_score === 'number') task.importance_score = data.summary.importance_score;
+        }
+
+        // 合并其他字段
+        if (data.status && data.status !== task.status) {
+            task.status = data.status;
+            // [V3.7] 关键状态跃迁时，重置播报标记，确保最终结果必通过 Watchdog 播报
+            if (task.status === 'READY' || task.status === 'COMPLETED' || task.status === 'FAILED') {
+                task.is_delivered = false;
             }
         }
-        canvas.task_status.status = status;
-        canvas.task_status.version = Date.now();
-        canvas.task_status.is_delivered = is_delivered;
-        // [V3.6.25] 权重归一化：READY/COMPLETED 结果默认权重提升至 5.0，确保至少能触发 Watchdog 默认播报
-        if (!canvas.task_status.importance_score || canvas.task_status.importance_score === 0) {
-            canvas.task_status.importance_score = (status === 'READY' || status === 'COMPLETED') ? 5.0 : 1.0;
-        }
+        if (data.is_delivered !== undefined) task.is_delivered = data.is_delivered;
+        if (data.importance_score !== undefined) task.importance_score = data.importance_score;
+        if (data.stage) task.stage = data.stage;
+        if (data.progress !== undefined) task.progress = data.progress;
+
+        // [V3.10] 新增字段支持
+        if (data.direct_response !== undefined) task.direct_response = data.direct_response;
+        if (data.extended_context !== undefined) task.extended_context = data.extended_context;
+        if (data.tool_agent_id !== undefined) task.tool_agent_id = data.tool_agent_id;
+        if (data.pending_questions !== undefined) task.pending_questions = data.pending_questions;
+        if (data.completed_at !== undefined) task.completed_at = data.completed_at;
         
-        // 更新日志事件，重命名 legacyRecovery 为更清晰的 READY
-        const eventName = (status === 'READY' || status === 'COMPLETED') ? 'CANVAS_READY' : 'CANVAS_PROGRESS_SYNC';
-        await this.logCanvasEvent(callId, eventName, { summary });
+        
+        task.updated_at = Date.now();
+        task.version = Date.now();
+        if (task.status === 'COMPLETED' || task.status === 'FAILED') task.completed_at = Date.now();
+
+        // [兼容性] 如果是当前活跃任务，同步到旧版 task_status
+        if (canvas.task_status.taskId === taskId) {
+            Object.assign(canvas.task_status, { ...task, taskId, current_progress: task.progress || 0 });
+        }
+
+        const eventName = (task.status === 'READY' || task.status === 'COMPLETED') ? 'CANVAS_READY' : 'CANVAS_PROGRESS_SYNC';
+        await this.logCanvasEvent(callId, eventName, { taskId, summary: task.summary });
     }
 
-    async markAsDelivered(callId: string) {
+    private legacySyncOldTaskStatus(canvas: any, data: any) {
+        // 实现旧版平替逻辑
+        if (typeof data.summary === 'string') {
+            canvas.task_status.summary = data.summary;
+        } else if (data.summary) {
+             Object.assign(canvas.task_status, data.summary);
+        }
+        if (data.status) canvas.task_status.status = data.status;
+        canvas.task_status.version = Date.now();
+    }
+
+    async appendCanvasAudit(callId: string, summary: any, status: 'READY' | 'PENDING' | 'COMPLETED' | 'FAILED' = 'READY', is_delivered: boolean = false, taskId?: string) {
         const canvas = this.getCanvas(callId);
-        canvas.task_status.is_delivered = true;
-        canvas.task_status.version = Date.now(); 
-        await this.logCanvasEvent(callId, 'CANVAS_DELIVERY_CONFIRMED', { summary: canvas.task_status.summary });
+        const targetId = taskId || canvas.task_status.taskId || '';
+        await this.updateTask(callId, targetId, { summary, status, is_delivered });
+    }
+
+    async markAsDelivered(callId: string, taskId?: string) {
+        const canvas = this.getCanvas(callId);
+        const targetId = taskId || canvas.task_status.taskId;
+        const task = canvas.tasks.find(t => t.id === targetId);
+        
+        if (task) {
+            task.is_delivered = true;
+            task.version = Date.now();
+            if (canvas.task_status.taskId === targetId) {
+                canvas.task_status.is_delivered = true;
+                canvas.task_status.version = task.version;
+            }
+            await this.logCanvasEvent(callId, 'CANVAS_DELIVERY_CONFIRMED', { taskId: targetId, summary: task.summary });
+        } else {
+            // 回退到旧逻辑
+            canvas.task_status.is_delivered = true;
+            canvas.task_status.version = Date.now(); 
+            await this.logCanvasEvent(callId, 'CANVAS_DELIVERY_CONFIRMED', { summary: canvas.task_status.summary });
+        }
+    }
+
+    cancelTask(callId: string, taskId: string) {
+        const canvas = this.getCanvas(callId);
+        const task = canvas.tasks.find(t => t.id === taskId);
+        if (task) {
+            task.status = 'CANCELLED';
+            task.version = Date.now();
+            task.completed_at = Date.now();
+            if (canvas.task_status.taskId === taskId) {
+                canvas.task_status.status = 'FAILED' as any; // 旧版无 CANCELLED
+                canvas.task_status.version = task.version;
+            }
+            console.log(`[CanvasManager][${callId}] 🛑 Task CANCELLED: ${taskId}`);
+        }
+    }
+
+    getUndeliveredTasks(callId: string) {
+        const canvas = this.getCanvas(callId);
+        return canvas.tasks.filter(t => !t.is_delivered && (t.status === 'READY' || t.status === 'COMPLETED' || t.status === 'FAILED'));
     }
 
     /**
@@ -111,24 +221,10 @@ export class CanvasManager {
     getCanvases() { return this.canvases; }
     
     /**
-     * [V3.6.4] 重置内存中的任务状态，防止旧任务污染新对话
+     * [V3.7] 重置内存中的任务状态，由直接覆盖改为生成新任务
      */
     resetTaskStatus(callId: string): string {
-        const canvas = this.getCanvas(callId);
-        const taskId = `task-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-        canvas.task_status = {
-            taskId,
-            status: 'PENDING',
-            version: Date.now(),
-            current_progress: 0,
-            importance_score: 0,
-            is_delivered: false,
-            summary: '',
-            direct_response: '',
-            extended_context: ''
-        };
-        console.log(`[CanvasManager][${callId}] 🧹 Memory state purified. New TaskId: ${taskId}`);
-        return taskId;
+        return this.createTask(callId, '新任务');
     }
 
     removeCanvas(callId: string) {

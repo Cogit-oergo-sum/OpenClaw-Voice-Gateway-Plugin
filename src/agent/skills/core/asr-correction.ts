@@ -19,10 +19,11 @@ export class AsrCorrectionSkill implements IFastSkill {
         required: ['original_word', 'corrected_word']
     };
     isLongRunning = false; // 内核级极速同步工具
+    source: 'core' | 'external' = 'core';
 
     constructor(private callManager?: CallManager) {}
 
-    async execute(args: { original_word: string; corrected_word: string }, callId: string, canvasManager: CanvasManager): Promise<string> {
+    async execute(args: { original_word: string; corrected_word: string }, callId: string, canvasManager: CanvasManager, taskId?: string, options?: { signal?: AbortSignal; onTaskReady?: (callId: string, taskId: string, result: string) => Promise<void> }): Promise<string> {
         const { original_word, corrected_word } = args;
 
         // [V3.6.26] 健壮性校验：防止因逻辑补救失效产生 undefined 数据污染 Canvas
@@ -61,9 +62,14 @@ export class AsrCorrectionSkill implements IFastSkill {
         // 3. 注入 Canvas
         const canvas = canvasManager.getCanvas(callId);
         // 纠错应具有较低的重要性权重，避免触发 SLC 的主动播报
-        canvas.task_status.importance_score = 0.5;
-        canvas.task_status.summary = (canvas.task_status.summary || '') + `\n${directive}`;
-        canvas.task_status.version = Date.now();
+        const targetTaskId = taskId || (canvas.tasks.length > 0 ? canvas.tasks[canvas.tasks.length - 1].id : "legacy");
+        const activeTask = canvas.tasks.find(t => t.id === targetTaskId) || canvas.task_status;
+        
+        await canvasManager.updateTask(callId, targetTaskId, {
+            importance_score: 0.5,
+            summary: (activeTask.summary || '') + `\n${directive}`,
+            version: Date.now()
+        });
         
         // 4. 记录日志
         await canvasManager.logCanvasEvent(callId, 'ASR_CORRECTED', { 

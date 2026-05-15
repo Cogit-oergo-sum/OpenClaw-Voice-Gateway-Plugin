@@ -1,0 +1,149 @@
+{
+  "text-chat-1776410316002": {
+    "env": {
+      "time": "2026/4/17 15:18:44",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_7bya",
+      "name": "查询天气",
+      "status": "READY",
+      "summary": "[weather_mcp] 任务执行异常: Command failed: docker exec openclaw_voice_test openclaw agent --agent \"text-chat-1776410316002\" --message \"查询深圳天气怎么样今日天气\" --json\nGateway agent failed; falling back to embedded: Error: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\nError: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\n",
+      "importance_score": 8,
+      "is_delivered": true,
+      "created_at": 1776410316857,
+      "updated_at": 1776410324124,
+      "version": 1776410324984,
+      "pending_questions": [],
+      "taskId": "t_7bya",
+      "current_progress": 0,
+      "direct_response": "[weather_mcp] 任务执行异常: Command failed: docker exec openclaw_voice_test openclaw agent --agent \"text-chat-1776410316002\" --message \"查询深圳天气怎么样今日天气\" --json\nGateway agent failed; falling back to embedded: Error: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\nError: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\n"
+    },
+    "tasks": [
+      {
+        "id": "t_7bya",
+        "name": "查询天气",
+        "status": "READY",
+        "summary": "[weather_mcp] 任务执行异常: Command failed: docker exec openclaw_voice_test openclaw agent --agent \"text-chat-1776410316002\" --message \"查询深圳天气怎么样今日天气\" --json\nGateway agent failed; falling back to embedded: Error: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\nError: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\n",
+        "importance_score": 8,
+        "is_delivered": true,
+        "created_at": 1776410316857,
+        "updated_at": 1776410324124,
+        "version": 1776410324984,
+        "pending_questions": [],
+        "direct_response": "[weather_mcp] 任务执行异常: Command failed: docker exec openclaw_voice_test openclaw agent --agent \"text-chat-1776410316002\" --message \"查询深圳天气怎么样今日天气\" --json\nGateway agent failed; falling back to embedded: Error: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\nError: Unknown agent id \"text-chat-1776410316002\". Use \"openclaw agents list\" to see configured agents.\n"
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "先生，再等等哦，马上就能知道啦。",
+      "interrupted": false,
+      "last_interaction_time": 1776410324501,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "unknown": {
+    "env": {
+      "time": "2026/4/20 10:49:44",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_ykhm",
+      "name": "在当前工作目录下创建一个名为 test_race_fix_20260420 的文件，内容为 'RaceConditionFixed'",
+      "status": "READY",
+      "summary": "搞定，非常利落。文件已创建：`test_race_fix_20260420`，内容写入 `RaceConditionFixed`。",
+      "importance_score": 6,
+      "is_delivered": true,
+      "created_at": 1776653361059,
+      "updated_at": 1776653383973,
+      "version": 1776653385760,
+      "pending_questions": [],
+      "taskId": "t_ykhm",
+      "current_progress": 0,
+      "direct_response": "搞定，非常利落。文件已创建：`test_race_fix_20260420`，内容写入 `RaceConditionFixed`。"
+    },
+    "tasks": [
+      {
+        "id": "t_j8xr",
+        "name": "在当前工作目录下创建一个名为 test_fix_verify_20260420 的文件，内容为 'Hello World'。",
+        "status": "FAILED",
+        "summary": "任务进程在网关重启期间已中断。",
+        "importance_score": 5,
+        "is_delivered": false,
+        "created_at": 1776653074765,
+        "updated_at": 1776654131228,
+        "version": 1776654131228,
+        "pending_questions": [],
+        "direct_response": "任务进程在网关重启期间已中断。",
+        "tool_agent_id": "agent_unknown_1776653361056",
+        "completed_at": 1776654131228
+      },
+      {
+        "id": "t_ykhm",
+        "name": "在当前工作目录下创建一个名为 test_race_fix_20260420 的文件，内容为 'RaceConditionFixed'",
+        "status": "READY",
+        "summary": "搞定，非常利落。文件已创建：`test_race_fix_20260420`，内容写入 `RaceConditionFixed`。",
+        "importance_score": 6,
+        "is_delivered": true,
+        "created_at": 1776653361059,
+        "updated_at": 1776653383973,
+        "version": 1776653385760,
+        "pending_questions": [],
+        "direct_response": "搞定，非常利落。文件已创建：`test_race_fix_20260420`，内容写入 `RaceConditionFixed`。"
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "？怎么突然不说话啦？来，我给您讲个笑话吧——有一天，小猪佩奇哭着对妈妈说：\"小朋友都说我长得像吹风机。\"您知道她妈妈怎么回答的吗？",
+      "interrupted": false,
+      "last_interaction_time": 1776653384911,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  },
+  "text-chat-1776654152729": {
+    "env": {
+      "time": "2026/4/20 11:08:17",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_40sr",
+      "name": "创建一份今日（2025年4月20日，星期六）的个人待办清单，包含常规事项（如饮水、运动、休息）和可能的当日行程提示（如天气晴朗适合户外活动），格式清晰、可读性强。",
+      "status": "COMPLETED",
+      "summary": "深圳今日多云间晴，有阵雨可能，气温23-29°C，湿度66%，出门请带伞。",
+      "importance_score": 7,
+      "is_delivered": true,
+      "created_at": 1776654363158,
+      "updated_at": 1776654437219,
+      "version": 1776654557748,
+      "tool_agent_id": "t_40sr",
+      "pending_questions": [],
+      "taskId": "t_40sr",
+      "current_progress": 0,
+      "direct_response": "深圳今日多云间晴，有阵雨可能，气温23-29°C，湿度66%，出门请带伞。",
+      "extended_context": "**今日天气划重点：**\n- 🌡️ 气温：23–29°C\n- ⛅ 天气：多云间晴，**有阵雨可能**\n- 🌧️ 降水概率高，建议随身携带雨具\n- 💧 湿度：66%\n\n✅ 已为你创建待办清单：`/app/workspace/todo/2026-04-20.md`\n📋 清单含晨晚间例行、任务区、雨天户外备选、健康提醒及专注目标。",
+      "completed_at": 1776654437219
+    },
+    "tasks": [
+      {
+        "id": "t_lsc0",
+        "name": "删除当前工作目录下名为'0325test'的文件",
+        "status": "READY",
+        "summary": "搞定，已经删除了。",
+        "importance_score": 6,
+        "is_delivered": true,
+        "created_at": 1776654214382,
+        "updated_at": 1776654247742,
+        "version": 1776654249259,
+        "pending_questions": [],
+        "direct_response": "搞定，已经删除了。"
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "先生，您最近有关注最新的科技动态吗？我刚刚看到一项有趣的发现！",
+      "interrupted": false,
+      "last_interaction_time": 1776654498423,
+      "is_busy": false,
+      "idle_trigger_count": 1
+    }
+  }
+}

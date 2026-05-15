@@ -9,7 +9,7 @@ async function verify() {
     const cm = new CallManager({
         zego: { appId: 0, serverSecret: "", aiAgentBaseUrl: "" },
         llm: { provider: "openai", apiKey: "", model: "", baseUrl: "" },
-        tts: { vendor: "zego", appId: 0, token: "", voiceType: "" }
+        tts: { vendor: "zego", appId: 0, token: "", voiceType: "", resourceId: "" }
     } as any);
     const userId = "test-call-id";
     cm.createCall(userId);

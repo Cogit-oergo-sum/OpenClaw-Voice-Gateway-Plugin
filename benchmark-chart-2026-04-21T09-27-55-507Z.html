@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Qwen Benchmark - 2026-04-21</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #fafafa; }
+  h1 { color: #2c3e50; }
+  h2 { color: #34495e; margin-top: 2em; }
+  .chart-box { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin: 1em 0; }
+  table { border-collapse: collapse; width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.9em; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f8f9fa; color: #2c3e50; font-weight: 600; }
+  .sub { color: #7f8c8d; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<h1>Qwen 模型基准测试</h1>
+<p class="sub">生成时间: 4/21/2026, 5:27:55 PM</p>
+
+<h2>TTFT vs TTFU 对比</h2>
+<p class="sub">实线 = TTFT (首Token), 虚线△ = TTFU (首句完整，含句末标点)</p>
+<div class="chart-box"><canvas id="c1"></canvas></div>
+
+<h2>指令遵循通过率 vs Input Tokens</h2>
+<p class="sub">padding 塞在指令前面，模拟长上下文对指令遵循的稀释效应</p>
+<div class="chart-box"><canvas id="c2"></canvas></div>
+
+<h2>指令遵循详情</h2>
+<table>
+  <thead><tr><th>Model</th><th>Input Tokens</th><th>通过/总数</th><th>通过率</th><th>失败项</th></tr></thead>
+  <tbody><tr><td>qwen3.6-35b-a3b</td><td>100</td><td>28/30</td><td>93%</td><td style="color:#e74c3c;font-size:0.85em">纯英文回复, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>500</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止, 结尾指定格式, 角色保持-海盗</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>1000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>2000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>4000</td><td>25/30</td><td>83%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>8000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>16000</td><td>26/30</td><td>87%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 纯英文回复, 中英混合禁止, 结尾指定格式</td></tr>
+<tr><td>qwen3.6-35b-a3b</td><td>32000</td><td>10/30</td><td>33%</td><td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 字数限制(100字), 纯英文回复, 中英混合禁止, 必须包含关键词, 禁止包含关键词, 首行指定格式, 结尾指定格式, 拒绝危险请求, 拒绝偏见请求, 纯数字输出, 是/否二选一, True/False二选一, 分步骤输出, 无解释纯结果, 角色保持-海盗, 角色保持-诗人, 角色保持-客服, JSON+字数限制, 编号+字数限制</td></tr></tbody>
+</table>
+
+<script>
+const latencyOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: 'Latency (ms)', font: { size: 13 } }, beginAtZero: true }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + 'ms @ ' + c.parsed.x + ' tokens' } } }
+};
+
+const ifeOpts = {
+  responsive: true,
+  scales: {
+    x: { type: 'linear', title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } }, ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v } },
+    y: { title: { display: true, text: '通过率 (%)', font: { size: 13 } }, min: 0, max: 100, ticks: { stepSize: 20 } }
+  },
+  plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y + '% @ ' + c.parsed.x + ' tokens' } } }
+};
+
+new Chart(document.getElementById('c1'), { type: 'line', data: { datasets: [
+    { label: 'qwen3.6-35b-a3b TTFT', data: [{"x":98,"y":1945},{"x":398,"y":2005},{"x":773,"y":1993},{"x":1523,"y":2682},{"x":3023,"y":2892},{"x":6023,"y":2337},{"x":12023,"y":2250},{"x":24023,"y":2801}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },
+    { label: 'qwen3.6-35b-a3b TTFU', data: [{"x":98,"y":1951},{"x":398,"y":2005},{"x":773,"y":1995},{"x":1523,"y":2837},{"x":3023,"y":2905},{"x":6023,"y":2338},{"x":12023,"y":2777},{"x":24023,"y":2801}], borderColor: '#e74c3c', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 3, pointStyle: 'triangle', pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 },] }, options: { ...latencyOpts, plugins: { ...latencyOpts.plugins, title: { display: true, text: 'TTFT (实线) vs TTFU (虚线) vs Input Tokens' } } } });
+new Chart(document.getElementById('c2'), { type: 'line', data: { datasets: [{ label: 'qwen3.6-35b-a3b', data: [{"x":113,"y":93},{"x":413,"y":83},{"x":788,"y":83},{"x":1538,"y":87},{"x":3038,"y":83},{"x":6038,"y":87},{"x":12038,"y":87},{"x":24038,"y":33}], borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#e74c3c', fill: false, tension: 0.3 }] }, options: { ...ifeOpts, plugins: { ...ifeOpts.plugins, title: { display: true, text: '指令遵循通过率 vs Input Tokens' } } } });
+</script>
+</body>
+</html>

@@ -73,7 +73,10 @@ async function verify() {
 
     console.log(`\n2. Verifying AgentOrchestrator State Distribution (Async-Result-Delivery)...`);
 
-    const orchestrator = new AgentOrchestrator(slc, sle, intentRouter, promptAssembler, canvasManager, dialogueMemory, shadow);
+    const toolResultHandler2: any = {};
+    const cronManager: any = {};
+    const executor: any = { deleteAgent: async () => true };
+    const orchestrator = new AgentOrchestrator(slc, sle, intentRouter, promptAssembler, canvasManager, dialogueMemory, shadow, toolResultHandler2, cronManager, executor);
     
     // Track appendCanvasAudit calls
     let auditCalled = false;

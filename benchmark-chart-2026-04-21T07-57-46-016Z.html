@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Qwen Benchmark Results</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #fafafa; }
+  h1 { color: #2c3e50; }
+  h2 { color: #34495e; margin-top: 2em; }
+  .chart-container { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin: 1em 0; }
+  table { border-collapse: collapse; width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #eee; }
+  th { background: #f8f9fa; color: #2c3e50; font-weight: 600; }
+  .subtitle { color: #7f8c8d; font-size: 0.9em; margin-bottom: 0.5em; }
+</style>
+</head>
+<body>
+
+<h1>Qwen 模型基准测试</h1>
+<p class="subtitle">数据来源: benchmark-results-2026-04-21T07-57-46-016Z.jsonl | 生成时间: 4/21/2026, 3:59:21 PM</p>
+
+<h2>TTFT (首 Token 延迟) vs Input Tokens</h2>
+<div class="chart-container">
+  <canvas id="ttftChart"></canvas>
+</div>
+
+<h2>TTFU (首句完整延迟) vs Input Tokens</h2>
+<p class="subtitle">首句 = 首个句末标点(，。？！等)出现时刻</p>
+<div class="chart-container">
+  <canvas id="ttfuChart"></canvas>
+</div>
+
+<h2>TTFT 与 TTFU 对比 (同图)</h2>
+<div class="chart-container">
+  <canvas id="compareChart"></canvas>
+</div>
+
+<h2>指令遵循 (IFEval 风格)</h2>
+<table>
+  <thead>
+    <tr><th>Model</th><th>通过/总数</th><th>通过率</th><th>可视化</th><th>失败项</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+    <td>qwen-turbo</td>
+    <td>8/10</td>
+    <td>80%</td>
+    <td style="font-family:monospace;color:#2ecc71">████████████████</td>
+    <td style="color:#e74c3c;font-size:0.85em">字数限制(50字), 思维链关闭-无思考过程</td>
+  </tr>
+<tr>
+    <td>qwen-plus</td>
+    <td>9/10</td>
+    <td>90%</td>
+    <td style="font-family:monospace;color:#2ecc71">██████████████████</td>
+    <td style="color:#e74c3c;font-size:0.85em">思维链关闭-无思考过程</td>
+  </tr>
+<tr>
+    <td>qwen3.5-plus</td>
+    <td>9/10</td>
+    <td>90%</td>
+    <td style="font-family:monospace;color:#2ecc71">██████████████████</td>
+    <td style="color:#e74c3c;font-size:0.85em">思维链关闭-无思考过程</td>
+  </tr>
+<tr>
+    <td>qwen-flash-character</td>
+    <td>3/10</td>
+    <td>30%</td>
+    <td style="font-family:monospace;color:#2ecc71">██████</td>
+    <td style="color:#e74c3c;font-size:0.85em">JSON格式输出, JSON格式-嵌套对象, 英文回复, 无markdown包裹, 单选格式, 列表格式(5项), 思维链关闭-无思考过程</td>
+  </tr>
+  </tbody>
+</table>
+
+<script>
+const baseOptions = {
+  responsive: true,
+  scales: {
+    x: {
+      type: 'linear',
+      title: { display: true, text: 'Input Tokens (actual)', font: { size: 13 } },
+      ticks: { callback: v => v >= 1000 ? (v/1000)+'K' : v }
+    },
+    y: {
+      title: { display: true, text: 'Latency (ms)', font: { size: 13 } },
+      beginAtZero: true,
+    }
+  },
+  plugins: {
+    tooltip: {
+      callbacks: {
+        label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + 'ms @ ' + ctx.parsed.x + ' tokens'
+      }
+    }
+  }
+};
+
+new Chart(document.getElementById('ttftChart'), {
+  type: 'line',
+  datasets: [{
+    label: 'qwen-turbo',
+    data: [{"x":99,"y":369},{"x":399,"y":331},{"x":774,"y":345},{"x":1524,"y":348},{"x":3024,"y":362},{"x":6024,"y":494},{"x":12024,"y":663},{"x":24024,"y":2347}],
+    borderColor: '#e74c3c',
+    backgroundColor: 'rgba(231,76,60,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#e74c3c',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen-plus',
+    data: [{"x":95,"y":478},{"x":395,"y":577},{"x":770,"y":493},{"x":1520,"y":477},{"x":3020,"y":496},{"x":6020,"y":641},{"x":12020,"y":1089},{"x":24020,"y":1909}],
+    borderColor: '#3498db',
+    backgroundColor: 'rgba(52,152,219,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#3498db',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen3.5-plus',
+    data: [{"x":98,"y":481},{"x":398,"y":498},{"x":773,"y":513},{"x":1523,"y":553},{"x":3023,"y":718},{"x":6023,"y":902},{"x":12023,"y":1162},{"x":24023,"y":2057}],
+    borderColor: '#2ecc71',
+    backgroundColor: 'rgba(46,204,113,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#2ecc71',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen-flash-character',
+    data: [{"x":95,"y":326},{"x":395,"y":284},{"x":770,"y":361},{"x":1520,"y":449},{"x":3020,"y":453},{"x":6020,"y":665}],
+    borderColor: '#f39c12',
+    backgroundColor: 'rgba(243,156,18,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#f39c12',
+    fill: false,
+    tension: 0.3,
+  }],
+  options: { ...baseOptions, plugins: { ...baseOptions.plugins, title: { display: true, text: 'TTFT (首Token延迟) vs Input Tokens' } } },
+});
+
+new Chart(document.getElementById('ttfuChart'), {
+  type: 'line',
+  datasets: [{
+    label: 'qwen-turbo',
+    data: [{"x":99,"y":687},{"x":399,"y":403},{"x":774,"y":401},{"x":1524,"y":420},{"x":3024,"y":412},{"x":6024,"y":624},{"x":12024,"y":1071},{"x":24024,"y":2457}],
+    borderColor: '#e74c3c',
+    backgroundColor: 'rgba(231,76,60,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#e74c3c',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen-plus',
+    data: [{"x":95,"y":565},{"x":395,"y":635},{"x":770,"y":582},{"x":1520,"y":563},{"x":3020,"y":600},{"x":6020,"y":730},{"x":12020,"y":1183},{"x":24020,"y":2003}],
+    borderColor: '#3498db',
+    backgroundColor: 'rgba(52,152,219,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#3498db',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen3.5-plus',
+    data: [{"x":98,"y":578},{"x":398,"y":594},{"x":773,"y":609},{"x":1523,"y":645},{"x":3023,"y":832},{"x":6023,"y":992},{"x":12023,"y":1248},{"x":24023,"y":2062}],
+    borderColor: '#2ecc71',
+    backgroundColor: 'rgba(46,204,113,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#2ecc71',
+    fill: false,
+    tension: 0.3,
+  },
+    {
+    label: 'qwen-flash-character',
+    data: [{"x":95,"y":330},{"x":395,"y":528},{"x":770,"y":447},{"x":1520,"y":399},{"x":3020,"y":536},{"x":6020,"y":575}],
+    borderColor: '#f39c12',
+    backgroundColor: 'rgba(243,156,18,0.1)',
+    borderWidth: 2,
+    pointRadius: 4,
+    pointBackgroundColor: '#f39c12',
+    fill: false,
+    tension: 0.3,
+  }],
+  options: { ...baseOptions, plugins: { ...baseOptions.plugins, title: { display: true, text: 'TTFU (首句完整延迟) vs Input Tokens' } } },
+});
+
+// 对比图: 每个模型画 TTFT 实线 + TTFU 虚线
+const compareDatasets = [];
+compareDatasets.push({
+  label: 'qwen-turbo TTFT',
+  data: [{"x":99,"y":369},{"x":399,"y":331},{"x":774,"y":345},{"x":1524,"y":348},{"x":3024,"y":362},{"x":6024,"y":494},{"x":12024,"y":663},{"x":24024,"y":2347}],
+  borderColor: '#e74c3c',
+  backgroundColor: 'rgba(231,76,60,0.1)',
+  borderWidth: 2,
+  pointRadius: 4,
+  pointBackgroundColor: '#e74c3c',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen-turbo TTFU',
+  data: [{"x":99,"y":687},{"x":399,"y":403},{"x":774,"y":401},{"x":1524,"y":420},{"x":3024,"y":412},{"x":6024,"y":624},{"x":12024,"y":1071},{"x":24024,"y":2457}],
+  borderColor: '#e74c3c',
+  backgroundColor: 'transparent',
+  borderWidth: 2,
+  borderDash: [6, 3],
+  pointRadius: 3,
+  pointStyle: 'triangle',
+  pointBackgroundColor: '#e74c3c',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen-plus TTFT',
+  data: [{"x":95,"y":478},{"x":395,"y":577},{"x":770,"y":493},{"x":1520,"y":477},{"x":3020,"y":496},{"x":6020,"y":641},{"x":12020,"y":1089},{"x":24020,"y":1909}],
+  borderColor: '#3498db',
+  backgroundColor: 'rgba(52,152,219,0.1)',
+  borderWidth: 2,
+  pointRadius: 4,
+  pointBackgroundColor: '#3498db',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen-plus TTFU',
+  data: [{"x":95,"y":565},{"x":395,"y":635},{"x":770,"y":582},{"x":1520,"y":563},{"x":3020,"y":600},{"x":6020,"y":730},{"x":12020,"y":1183},{"x":24020,"y":2003}],
+  borderColor: '#3498db',
+  backgroundColor: 'transparent',
+  borderWidth: 2,
+  borderDash: [6, 3],
+  pointRadius: 3,
+  pointStyle: 'triangle',
+  pointBackgroundColor: '#3498db',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen3.5-plus TTFT',
+  data: [{"x":98,"y":481},{"x":398,"y":498},{"x":773,"y":513},{"x":1523,"y":553},{"x":3023,"y":718},{"x":6023,"y":902},{"x":12023,"y":1162},{"x":24023,"y":2057}],
+  borderColor: '#2ecc71',
+  backgroundColor: 'rgba(46,204,113,0.1)',
+  borderWidth: 2,
+  pointRadius: 4,
+  pointBackgroundColor: '#2ecc71',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen3.5-plus TTFU',
+  data: [{"x":98,"y":578},{"x":398,"y":594},{"x":773,"y":609},{"x":1523,"y":645},{"x":3023,"y":832},{"x":6023,"y":992},{"x":12023,"y":1248},{"x":24023,"y":2062}],
+  borderColor: '#2ecc71',
+  backgroundColor: 'transparent',
+  borderWidth: 2,
+  borderDash: [6, 3],
+  pointRadius: 3,
+  pointStyle: 'triangle',
+  pointBackgroundColor: '#2ecc71',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen-flash-character TTFT',
+  data: [{"x":95,"y":326},{"x":395,"y":284},{"x":770,"y":361},{"x":1520,"y":449},{"x":3020,"y":453},{"x":6020,"y":665}],
+  borderColor: '#f39c12',
+  backgroundColor: 'rgba(243,156,18,0.1)',
+  borderWidth: 2,
+  pointRadius: 4,
+  pointBackgroundColor: '#f39c12',
+  fill: false,
+  tension: 0.3,
+});
+compareDatasets.push({
+  label: 'qwen-flash-character TTFU',
+  data: [{"x":95,"y":330},{"x":395,"y":528},{"x":770,"y":447},{"x":1520,"y":399},{"x":3020,"y":536},{"x":6020,"y":575}],
+  borderColor: '#f39c12',
+  backgroundColor: 'transparent',
+  borderWidth: 2,
+  borderDash: [6, 3],
+  pointRadius: 3,
+  pointStyle: 'triangle',
+  pointBackgroundColor: '#f39c12',
+  fill: false,
+  tension: 0.3,
+});
+
+new Chart(document.getElementById('compareChart'), {
+  type: 'line',
+  data: { datasets: compareDatasets },
+  options: { ...baseOptions, plugins: { ...baseOptions.plugins, title: { display: true, text: 'TTFT (实线) vs TTFU (虚线) 对比' } } },
+});
+</script>
+
+</body>
+</html>

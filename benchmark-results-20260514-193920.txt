@@ -1,0 +1,9 @@
+SLC Model Benchmark - Thu May 14 19:39:20 HKT 2026
+============================================
+Model                            Pass  Total     Rate   TTFT(ms)    SLC(ms)
+--------------------------------------------
+qwen3.6-flash                  critical):     33    42.4%     1075ms      767ms
+qwen3.6-plus                   critical):     33    54.5%     1159ms     1556ms
+deepseek-v4-flash              critical):     33    54.5%     1223ms     1907ms
+deepseek-v4-pro                critical):     33    69.7%     1156ms     3664ms
+deepseek-v3.2                  critical):     33    42.4%     2030ms     3994ms

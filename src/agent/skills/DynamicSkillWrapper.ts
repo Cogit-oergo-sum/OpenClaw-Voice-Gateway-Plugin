@@ -11,6 +11,7 @@ export class DynamicSkillWrapper implements IFastSkill {
     public description: string;
     public parameters: any;
     public isLongRunning: boolean;
+    public source: 'core' | 'external' = 'external';
     public runtime: string = 'mcp';
     private endpoint: string;
     private method: string = 'POST';
@@ -36,7 +37,7 @@ export class DynamicSkillWrapper implements IFastSkill {
     /**
      * [V3.5.3] 真实的 Endpoint 派发执行
      */
-    async execute(args: any, callId: string, canvasManager: CanvasManager): Promise<string> {
+    async execute(args: any, callId: string, canvasManager: CanvasManager, taskId?: string, options?: { signal?: AbortSignal; onTaskReady?: (callId: string, taskId: string, result: string) => Promise<void> }): Promise<string> {
         console.log(`[DynamicSkillWrapper] 正在执行技能: ${this.name} (runtime: ${this.runtime})`);
 
         if (this.runtime === 'native') {
@@ -46,7 +47,8 @@ export class DynamicSkillWrapper implements IFastSkill {
             if (handler) {
                 console.log(`[DynamicSkillWrapper] 命中本地路由分支: ${this.name}`);
                 try {
-                    return await handler(args, callId, canvasManager);
+                    // [V4.4] 传递全部 5 参数，handler 自行决定使用哪些
+                    return await handler(args, callId, canvasManager, taskId, options);
                 } catch (e: any) {
                     console.error(`[DynamicSkillWrapper Native Error] ${this.name}: ${e.message}`);
                     throw e;

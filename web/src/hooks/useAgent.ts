@@ -5,8 +5,16 @@ import type { Message } from '../components/SubtitleStream';
 import type { WidgetData } from '../components/GlassWidget';
 
 // 支持环境变量配置，本地开发默认 localhost，生产环境使用配置的地址
-const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:18795';
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || '';
 const MOCK_USER_ID = 'user_' + Math.floor(Math.random() * 10000);
+
+// [V4.3] ACTION 信令提取：从 AI 响应文本中提取 [ACTION:XXX] 并剥离
+const ACTION_RE = /\[ACTION:([A-Z_]+)\]/g;
+function extractActions(text: string): { cleanText: string; actions: string[] } {
+  const actions: string[] = [];
+  const cleanText = text.replace(ACTION_RE, (_, action) => { actions.push(action); return ''; }).trim();
+  return { cleanText, actions };
+}
 
 export function useAgent() {
   const [state, setState] = useState<AgentState>('idle');
@@ -31,11 +39,146 @@ export function useAgent() {
   const targetAgentStreamId = useRef<string>('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [currentMode, setCurrentMode] = useState<string>(''); // [V4.1] 当前对话模式
+  const [currentModeDesc, setCurrentModeDesc] = useState<string>(''); // [V4.1] 当前对话模式描述
+  const [agentInstanceId, setAgentInstanceId] = useState<string>(''); // 当前通话的 agentInstanceId
+  const [pendingAction, setPendingAction] = useState<string>(''); // [V4.3] 提取的 ACTION 信令
+
+  // [V3.7.5] ZEGO 官方消息缓存方案 - 参考 useChat.ts
+  const agentMsgMapRef = useRef<Record<number, { seqId: number; messageId: string; content: string }[]>>({});
+  const userMsgMapRef = useRef<Record<number, { seqId: number; content: string }[]>>({});
+  // [V3.7.3] 缓存提前到达的 perf_report（SSE 可能比 ZEGO Cmd=4 先到达）
+  const pendingPerfRef = useRef<{ trace: string[]; perf: any } | null>(null);
 
   const log = (msg: string) => console.log(`[useAgent] ${msg}`);
 
+  // [V4.3] 清除当前 action
+  const clearAction = useCallback(() => {
+    setPendingAction('');
+    setWidget(prev => ({ ...prev, show: false }));
+  }, []);
+
+  // [V4.3] pendingAction 驱动 GlassWidget 显示
+  useEffect(() => {
+    if (!pendingAction) return;
+    setWidget({
+      show: true,
+      title: 'ACTION',
+      task: pendingAction,
+      status: 'DONE',
+      progress: 100,
+    });
+  }, [pendingAction]);
+
+  // [V3.7.5] ZEGO 官方 handleUserMessage 实现 - Cmd=3 ASR
+  const handleUserMessage = useCallback((seqId: number, round: number, data: { MessageId: string; Text: string; EndFlag: boolean }) => {
+    const content = data.Text?.trim() || '';
+    if (!content) return;
+
+    log(`handleUserMessage: seqId=${seqId}, round=${round}, text="${content.substring(0,20)}..."`);
+
+    // 缓存消息片段
+    if (!userMsgMapRef.current[round]) {
+      userMsgMapRef.current[round] = [];
+    }
+    userMsgMapRef.current[round].push({ seqId, content });
+
+    setMessages(prev => {
+      const index = prev.findIndex(m => m.role === 'user' && m.roundId === round);
+
+      if (index !== -1) {
+        // 消息已存在，取 seqId 最大的内容（处理乱序）
+        const maxMsg = userMsgMapRef.current[round].reduce((max, cur) =>
+          cur.seqId > max.seqId ? cur : max
+        );
+        const updated = [...prev];
+        updated[index] = { ...updated[index], text: maxMsg.content, isTyping: !data.EndFlag };
+        return updated;
+      }
+
+      // 新消息
+      return [...prev, {
+        id: `user-${round}`,
+        role: 'user',
+        text: content,
+        isTyping: !data.EndFlag,
+        roundId: round
+      }];
+    });
+  }, []);
+
+  // [V3.7.5] ZEGO 官方 handleAgentMessage 实现 - Cmd=4 LLM
+  const handleAgentMessage = useCallback((seqId: number, round: number, data: { MessageId: string; Text: string; EndFlag: boolean }) => {
+    const content = data.Text?.trim() || '';
+    const messageId = data.MessageId;
+    if (!content) return;
+
+    log(`handleAgentMessage: seqId=${seqId}, round=${round}, messageId=${messageId}, text="${content.substring(0,20)}..."`);
+
+    // 缓存消息片段
+    if (!agentMsgMapRef.current[round]) {
+      agentMsgMapRef.current[round] = [];
+    }
+    agentMsgMapRef.current[round].push({ seqId, messageId, content });
+
+    setMessages(prev => {
+      const index = prev.findIndex(m => m.role === 'agent' && m.roundId === round);
+
+      if (index !== -1) {
+        // 消息已存在，按 messageId 过滤，按 seqId 排序后拼接
+        const filtered = agentMsgMapRef.current[round].filter(m => m.messageId === messageId);
+        const sorted = [...filtered].sort((a, b) => a.seqId - b.seqId);
+        const mergedContent = sorted.map(m => m.content).join('');
+
+        const updated = [...prev];
+        // [V4.3] 提取并剥离 ACTION 信令
+        const { cleanText, actions } = extractActions(mergedContent);
+        if (actions.length > 0) {
+          log(`ACTION signals detected: ${actions.join(', ')}`);
+          setPendingAction(actions[actions.length - 1]); // 取最后一个 action
+        }
+        updated[index] = { ...updated[index], text: cleanText, isTyping: !data.EndFlag };
+        // [V3.7.3] 合并提前到达的 perf_report
+        if (data.EndFlag && pendingPerfRef.current) {
+          updated[index] = { ...updated[index], trace: pendingPerfRef.current.trace, perf: pendingPerfRef.current.perf };
+          pendingPerfRef.current = null;
+        }
+        return updated;
+      }
+
+      // 新消息
+      return [...prev, {
+        id: `agent-${round}`,
+        role: 'agent',
+        text: content,
+        isTyping: !data.EndFlag,
+        roundId: round,
+        ...(data.EndFlag && pendingPerfRef.current ? { trace: pendingPerfRef.current.trace, perf: pendingPerfRef.current.perf } : {}),
+      }];
+    });
+    if (data.EndFlag && pendingPerfRef.current) pendingPerfRef.current = null;
+  }, []);
+
   const triggerPulse = useCallback(() => {
     setPulseTrigger(prev => prev + 1);
+  }, []);
+
+  // [V4.1] 初始化时从后端获取 mode 信息
+  useEffect(() => {
+    fetch(`${GATEWAY_URL}/voice/mode-info`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.initialMode) {
+          setCurrentMode(data.initialMode);
+        }
+        if (data.modes) {
+          const initial = data.modes.find((m: any) => m.name === data.initialMode);
+          if (initial?.description) {
+            setCurrentModeDesc(initial.description);
+          }
+        }
+      })
+      .catch(() => {}); // 静默失败，不影响主流程
   }, []);
 
   const startCall = async () => {
@@ -59,6 +202,13 @@ export function useAgent() {
       roomId.current = data.roomId;
       targetAgentStreamId.current = data.agentStreamId; // Store latest target
 
+      // [V3.7.4] 同步 SSE sessionId 为语音通话的 agentInstanceId，以接收 perf_report
+      if (data.agentInstanceId) {
+        log(`Syncing SSE sessionId to voice session: ${data.agentInstanceId}`);
+        setCurrentSessionId(data.agentInstanceId);
+        setAgentInstanceId(data.agentInstanceId);
+      }
+
       if (!zgRef.current) {
         log('Initializing ZEGO Express Engine...');
         zgRef.current = new ZegoExpressEngine(1623602215, 'wss://webliveroom1623602215-api.zego.im/ws');
@@ -73,34 +223,21 @@ export function useAgent() {
           if (method === "onRecvRoomChannelMessage") {
             try {
               const recvMsg = JSON.parse(content.msgContent);
-              const { Cmd, Data } = recvMsg;
+              // [V3.7.5] 参考 ZEGO 官方 useChat.ts 实现方案
+              // 消息结构: { Timestamp, SeqId, Round, Cmd, Data: { MessageId, Text, EndFlag, SpeakStatus } }
+              const { Cmd, SeqId, Round, Data } = recvMsg;
+              log(`RoomChannelMessage: Cmd=${Cmd}, SeqId=${SeqId}, Round=${Round}, Text=${Data.Text?.substring(0,20)}...`);
 
-              if (Cmd === 3) { // ASR (User)
+              if (Cmd === 3) { // ASR (User) - 参考 handleUserMessage
                 setState('listening');
-                setMessages(prev => {
-                  const last = prev[prev.length - 1];
-                  if (last && last.role === 'user' && !last.isInterrupted) {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...last, text: Data.Text, isTyping: !Data.EndFlag };
-                    return updated;
-                  }
-                  return [...prev, { id: Date.now().toString(), role: 'user', text: Data.Text, isTyping: !Data.EndFlag }];
-                });
+                handleUserMessage(SeqId, Round, Data);
                 if (Data.EndFlag) {
                   setTimeout(() => setState('idle'), 1000);
                 }
-              } else if (Cmd === 4) { // LLM (Agent)
+              } else if (Cmd === 4) { // LLM (Agent) - 参考 handleAgentMessage
                 setState('speaking');
                 triggerPulse();
-                setMessages(prev => {
-                  const last = prev[prev.length - 1];
-                  if (last && last.role === 'agent') {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...last, text: Data.Text, isTyping: !Data.EndFlag };
-                    return updated;
-                  }
-                  return [...prev, { id: Date.now().toString(), role: 'agent', text: Data.Text, isTyping: !Data.EndFlag }];
-                });
+                handleAgentMessage(SeqId, Round, Data);
                 if (Data.EndFlag) {
                   setTimeout(() => setState('idle'), 1000);
                 }
@@ -155,9 +292,6 @@ export function useAgent() {
       setIsMuted(false); // Reset mute state on new call
       setHookText('RTC SESSION ESTABLISHED');
 
-      // Start Mock Webhook sequence
-      startMockSequence();
-
     } catch (e: any) {
       log('Connection failed: ' + e.message);
       setHookText('CONNECTION FAILED');
@@ -194,32 +328,7 @@ export function useAgent() {
     setIsConnected(false);
     setState('idle');
     setShowTerminal(true);
-  };
-
-  const startMockSequence = () => {
-    // Simulate some webhook activity after 5 seconds
-    setTimeout(() => {
-      setWidget({
-        show: true,
-        title: 'MEMORY SYNC',
-        task: 'Query: "小王", "邮件"',
-        status: 'RUNNING',
-        progress: 10,
-        log: 'Searching database...'
-      });
-
-      let p = 10;
-      const interval = setInterval(() => {
-        p += 20;
-        if (p >= 100) {
-          clearInterval(interval);
-          setWidget(prev => ({ ...prev, progress: 100, status: 'DONE', log: 'MATCH FOUND in memory.db' }));
-          setTimeout(() => setWidget(prev => ({ ...prev, show: false })), 3000);
-        } else {
-          setWidget(prev => ({ ...prev, progress: p }));
-        }
-      }, 800);
-    }, 5000);
+    setAgentInstanceId('');
   };
 
   const toggleMute = useCallback(async () => {
@@ -257,30 +366,71 @@ export function useAgent() {
   }, [isMuted, publishedStreamId]);
 
   const textChatSessionId = useRef<string>(`text-chat-${Date.now()}`);
+  const [currentSessionId, setCurrentSessionId] = useState<string>(textChatSessionId.current); // [V3.7.4] 动态 sessionId，支持语音通话同步
 
   // Proactive Notifications (SSE)
   useEffect(() => {
-    const sessionId = textChatSessionId.current;
+    const sessionId = currentSessionId;
     log(`Connecting to event stream for session: ${sessionId}`);
-    
+
     const eventSource = new EventSource(`${GATEWAY_URL}/voice/events?sessionId=${sessionId}`);
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+
+        // [V3.7.3] 处理 perf_report：语音对话的 trace/perf 通知
+        if (data.type === 'perf_report' && data.trace && data.perf) {
+          log(`Received perf_report: TTFT=${data.perf.ttft}ms, trace=${data.trace.join(' → ')}`);
+          setMessages(prev => {
+            // 找到最近的一条 agent 消息并合并 trace/perf
+            const lastAgentIdx = prev.findLastIndex(m => m.role === 'agent');
+            if (lastAgentIdx !== -1) {
+              const updated = [...prev];
+              updated[lastAgentIdx] = {
+                ...updated[lastAgentIdx],
+                trace: data.trace,
+                perf: data.perf,
+                isTyping: false
+              };
+              return updated;
+            }
+            // 还没有 agent 消息，缓存到 ref，等 Cmd=4 到达时合并
+            pendingPerfRef.current = { trace: data.trace, perf: data.perf };
+            return prev;
+          });
+          return;
+        }
+
+        // [V4.2] 处理 mode_update 事件（优先更新 mode）
+        if (data.type === 'mode_update' && data.mode) {
+          log(`Mode update: ${data.mode}, desc: ${data.modeDescription}`);
+          setCurrentMode(data.mode);
+          if (data.modeDescription) setCurrentModeDesc(data.modeDescription);
+          return; // mode_update 不需要显示消息，只需更新状态
+        }
         if (['notification', 'internal', 'idle'].includes(data.type) && data.content) {
           log(`Received notification: ${data.content}`);
-          setMessages(prev => [
-            ...prev, 
-            { 
-              id: 'notify-' + Date.now(), 
-              role: 'agent', 
-              text: data.content, 
-              fragments: [{ text: data.content, type: data.type }],
-              isTyping: false,
-              trace: data.trace
-            }
-          ]);
+          // [V4.3] notification 也提取 ACTION 信令
+          const { cleanText: notifyClean, actions: notifyActions } = extractActions(data.content);
+          if (notifyActions.length > 0) {
+            log(`ACTION signals detected (notification): ${notifyActions.join(', ')}`);
+            setPendingAction(notifyActions[notifyActions.length - 1]);
+          }
+          if (notifyClean) {
+              setMessages(prev => [
+                ...prev,
+                {
+                  id: 'notify-' + Date.now(),
+                  role: 'agent',
+                  text: notifyClean,
+                  fragments: [{ text: notifyClean, type: data.type }],
+                  isTyping: false,
+                  trace: data.trace,
+                  perf: data.perf
+                }
+              ]);
+          }
           triggerPulse();
         }
       } catch (e) {
@@ -288,15 +438,20 @@ export function useAgent() {
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error('EventSource failed:', err);
-      // Optional: retry logic
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.warn('[SSE] Connection permanently closed by server.');
+      } else if (eventSource.readyState === EventSource.CONNECTING) {
+        console.warn('[SSE] Connection lost, browser will auto-retry...');
+      } else {
+        console.error('[SSE] Connection error, readyState:', eventSource.readyState);
+      }
     };
 
     return () => {
       eventSource.close();
     };
-  }, [triggerPulse]);
+  }, [currentSessionId, triggerPulse]); // [V3.7.4] 依赖 currentSessionId，语音通话时自动重连
 
   const sendTextMessage = async (text: string) => {
     log(`Sending text message: ${text} (Version: v3, Session: ${textChatSessionId.current})`);
@@ -343,9 +498,28 @@ export function useAgent() {
               
               try {
                 const data = JSON.parse(dataStr);
+                // [V4.2] 处理 mode_update 事件（优先更新 mode）
+                if (data.type === 'mode_update' && data.mode) {
+                  setCurrentMode(data.mode);
+                  if (data.modeDescription) setCurrentModeDesc(data.modeDescription);
+                  continue; // mode_update 不需要显示消息，只需更新状态
+                }
                 if (['text', 'filler', 'chat', 'internal', 'idle', 'waiting'].includes(data.type)) {
                   if (data.content) {
                     fullText += data.content;
+                    // [V4.3] 从 SSE chunk 提取 ACTION 信令
+                    const { actions: chunkActions } = extractActions(data.content);
+                    if (chunkActions.length > 0) {
+                      log(`ACTION signals detected (SSE): ${chunkActions.join(', ')}`);
+                      setPendingAction(chunkActions[chunkActions.length - 1]);
+                    }
+                  }
+                  // [V4.1] 更新当前 mode
+                  if (data.mode) {
+                    setCurrentMode(data.mode);
+                  }
+                  if (data.modeDescription) {
+                    setCurrentModeDesc(data.modeDescription);
                   }
                   setMessages(prev => {
                     const updated = [...prev];
@@ -353,15 +527,19 @@ export function useAgent() {
                     if (idx !== -1) {
                       const newFragments = [...(updated[idx].fragments || [])];
                       if (data.content) {
-                        newFragments.push({ text: data.content, type: data.type });
+                        // [V4.3] fragment 也剥离信令
+                        const { cleanText: fragClean } = extractActions(data.content);
+                        newFragments.push({ text: fragClean, type: data.type });
                       }
-
-                      updated[idx] = { 
-                        ...updated[idx], 
-                        text: fullText, 
+                      // [V4.3] 显示文本剥离信令
+                      const { cleanText: displayText } = extractActions(fullText);
+                      updated[idx] = {
+                        ...updated[idx],
+                        text: displayText,
                         fragments: newFragments,
                         isTyping: !data.isFinal,
-                        trace: data.trace || updated[idx].trace 
+                        trace: data.trace || updated[idx].trace,
+                        perf: data.perf || updated[idx].perf
                       };
                     }
                     return updated;
@@ -387,9 +565,14 @@ export function useAgent() {
     pulseTrigger,
     isConnected,
     isMuted,
+    currentMode, // [V4.1] 当前对话模式
+    currentModeDesc, // [V4.1] 当前对话模式描述
+    agentInstanceId,
+    pendingAction, // [V4.3] 当前触发的 ACTION 信令
     startCall,
     endCall,
     toggleMute,
-    sendTextMessage
+    sendTextMessage,
+    clearAction, // [V4.3] 清除 ACTION 信令
   };
 }

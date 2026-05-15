@@ -14,15 +14,17 @@ export class LlmLogger {
      * @param metadata 包含 source, scenario, callId 等上下文
      * @param request 完整的 messages 数组
      * @param response LLM 返回的响应 (流式或非流式)
+     * @param usage 可选的 token 用量 { prompt_tokens, completion_tokens, total_tokens }
      */
     static log(
         metadata: { source: string; scenario: string; callId: string; model?: string },
         request: any[],
-        response: any
+        response: any,
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
     ) {
         try {
             const timestamp = new Date().toISOString();
-            
+
             // 解析响应文本 (支持流式 Chunk 或完整 OpenAI Response 对象)
             let responseText = "";
             if (typeof response === 'string') {
@@ -33,12 +35,21 @@ export class LlmLogger {
                 responseText = "[STREAMING_CHUNKS_COLLECTED_DOWNSTREAM]";
             }
 
-            const entry = {
+            const entry: any = {
                 timestamp,
                 ...metadata,
                 request,
-                response: responseText
+                response: responseText,
             };
+
+            // 注入 token 用量
+            if (usage) {
+                entry.usage = {
+                    input_tokens: usage.prompt_tokens,
+                    output_tokens: usage.completion_tokens,
+                    total_tokens: usage.total_tokens,
+                };
+            }
 
             // 注意：由于是开发调试工具，使用 appendFileSync 确保写入原子性
             fs.appendFileSync(this.logPath, JSON.stringify(entry) + '\n', 'utf8');

@@ -101,6 +101,40 @@ export const TextChatPanel: React.FC<TextChatPanelProps> = ({
                       m.text
                     )}
                     {m.isTyping && <span className="inline-block w-1.5 h-3 bg-cyan-400/50 ml-1 animate-pulse" />}
+                    
+                    {/* [V3.7.2] Latency Metrics Visualization */}
+                    {m.role === 'agent' && m.perf && (
+                      <div className="mt-2 p-2 rounded-lg bg-black/40 border border-white/5 font-mono text-[9px] w-full animate-in slide-in-from-top-2 duration-300">
+                        <div className="flex justify-between border-b border-white/5 pb-1 mb-1">
+                          <span className="text-cyan-400 font-bold uppercase tracking-tighter">Latency Analysis</span>
+                          <span className="font-bold text-white text-[10px]">{m.perf.total}ms</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 opacity-80">
+                          <div className="flex justify-between gap-1">
+                            <span className="text-white/40">TTFT</span>
+                            <span className="text-green-400">{m.perf.ttft ?? '-'}</span>
+                          </div>
+                          <div className="flex justify-between gap-1">
+                            <span className="text-white/40">1st Sent</span>
+                            <span className="text-yellow-400">{m.perf.first_sentence ?? '-'}</span>
+                          </div>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1 overflow-hidden h-1.5 bg-white/5 rounded-full border border-white/5">
+                           {m.perf.modules.router && <div className="h-full bg-blue-500" style={{ width: `${(m.perf.modules.router / m.perf.total) * 100}%` }} />}
+                           {m.perf.modules.slc && <div className="h-full bg-cyan-400" style={{ width: `${(m.perf.modules.slc / m.perf.total) * 100}%` }} />}
+                           {m.perf.modules.sle && <div className="h-full bg-purple-500" style={{ width: `${(m.perf.modules.sle / m.perf.total) * 100}%` }} />}
+                           {m.perf.modules.tool && <div className="h-full bg-orange-500" style={{ width: `${(m.perf.modules.tool / m.perf.total) * 100}%` }} />}
+                           {m.perf.modules.summarize && <div className="h-full bg-green-500" style={{ width: `${(m.perf.modules.summarize / m.perf.total) * 100}%` }} />}
+                        </div>
+                        <div className="mt-1 grid grid-cols-5 justify-items-center text-[7px] text-white/30 uppercase tracking-widest">
+                           <span className="text-blue-400">R:{m.perf.modules.router ?? 0}</span>
+                           <span className="text-cyan-400">SLC:{m.perf.modules.slc ?? 0}</span>
+                           <span className="text-purple-400">SLE:{m.perf.modules.sle ?? 0}</span>
+                           <span className="text-orange-400">T:{m.perf.modules.tool ?? 0}</span>
+                           <span className="text-green-400">S:{m.perf.modules.summarize ?? 0}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <span className="text-[8px] font-mono opacity-20 mt-1 uppercase">
                     {m.role === 'user' ? 'System User' : `FastAgent V3`}

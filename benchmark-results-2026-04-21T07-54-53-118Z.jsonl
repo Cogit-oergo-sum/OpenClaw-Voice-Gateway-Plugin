@@ -1,0 +1,3 @@
+{"type":"ttft","model":"qwen-turbo","targetInputTokens":100,"actualInputTokens":99,"outputTokens":6,"ttft_ms":577,"ttfu_ms":631,"totalLatency_ms":657}
+{"type":"ttft","model":"qwen-turbo","targetInputTokens":1000,"actualInputTokens":774,"outputTokens":6,"ttft_ms":299,"ttfu_ms":350,"totalLatency_ms":368}
+{"type":"ttft","model":"qwen-turbo","targetInputTokens":4000,"actualInputTokens":3024,"outputTokens":6,"ttft_ms":509,"ttfu_ms":644,"totalLatency_ms":669}

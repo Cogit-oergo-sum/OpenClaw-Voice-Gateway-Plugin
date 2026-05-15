@@ -119,7 +119,7 @@ async function runMilSpecV2() {
             sleBaseUrl: process.env.BAILIAN_BASE_URL
         },
         zego: { appId: Number(process.env.ZEGO_APP_ID), serverSecret: process.env.ZEGO_SERVER_SECRET || '', aiAgentBaseUrl: process.env.ZEGO_AI_AGENT_BASE_URL || '' },
-        tts: { vendor: 'zego', appId: '', token: '', voiceType: '' },
+        tts: { vendor: 'zego', appId: '', token: '', voiceType: '', resourceId: '' },
         asr: { vendor: 'zego' }
     };
 

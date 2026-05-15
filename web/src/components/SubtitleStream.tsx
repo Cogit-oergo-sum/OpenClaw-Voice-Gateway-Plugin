@@ -20,6 +20,8 @@ export interface Message {
   isInterrupted?: boolean;
   isTyping?: boolean;
   trace?: string[];
+  perf?: any;
+  roundId?: number; // [V3.7.4] ZEGO Round ID，用于精确区分对话轮次
 }
 
 interface SubtitleStreamProps {
@@ -81,6 +83,24 @@ export const SubtitleStream: React.FC<SubtitleStreamProps> = ({ messages }) => {
                 {msg.text}
                 {msg.isInterrupted && (
                   <span className="text-red-500 animate-pulse font-bold ml-2">||</span>
+                )}
+                {/* [V3.7.3] Latency Analysis 展示（语音对话延迟信息） */}
+                {msg.role === 'agent' && msg.perf && !msg.isTyping && (
+                  <div className="mt-1 p-1.5 rounded bg-black/40 backdrop-blur-sm text-[8px] font-mono border border-white/10 animate-in slide-in-from-bottom-1 duration-300">
+                    <div className="flex justify-between items-center border-b border-white/10 pb-1 mb-1">
+                      <span className="text-cyan-400 font-bold uppercase tracking-tighter">Latency</span>
+                      <span className="text-white font-bold">{msg.perf.total ?? '-'}ms</span>
+                    </div>
+                    <div className="flex justify-between opacity-80">
+                      <span className="text-white/40">TTFT</span>
+                      <span className="text-green-400">{msg.perf.ttft ?? '-'}ms</span>
+                    </div>
+                    {msg.trace && msg.trace.length > 0 && (
+                      <div className="mt-1 text-green-400/60 truncate text-[7px]">
+                        {msg.trace.join(' → ')}
+                      </div>
+                    )}
+                  </div>
                 )}
               </motion.div>
             );

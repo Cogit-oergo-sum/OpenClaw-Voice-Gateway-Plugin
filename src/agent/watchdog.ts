@@ -1,10 +1,15 @@
 import { EventEmitter } from 'events';
 import { CanvasManager } from './canvas-manager';
 import { AgentOrchestrator } from './agent-orchestrator';
+import { DialogueMemory } from './dialogue-memory';
+import { CronManager } from './cron-manager';
+import { TaskItem } from './types';
+import { TaskImportanceManager } from './task-importance-config';
 
 /**
  * [V3.4.0] WatchdogService: 守护进程服务
  * 负责心跳扫描 Canvas、磁盘快照同步以及触发主动播报事件
+ * [V3.11] 支持 TaskImportanceManager 动态阈值配置
  */
 export class WatchdogService extends EventEmitter {
     private scanTimer: NodeJS.Timeout | null = null;
@@ -15,8 +20,11 @@ export class WatchdogService extends EventEmitter {
 
     constructor(
         private canvasManager: CanvasManager,
+        private dialogueMemory: DialogueMemory,
+        private cronManager: CronManager,
         instanceId: string,
-        private scanInterval: number = 500
+        private scanInterval: number = 500,
+        private taskImportance?: TaskImportanceManager // [V3.11] 任务重要性配置管理
     ) {
         super();
         this.instanceId = instanceId;
@@ -37,20 +45,32 @@ export class WatchdogService extends EventEmitter {
         return this.notifiers.get(callId);
     }
 
+    stop() {
+        if (this.scanTimer) {
+            clearInterval(this.scanTimer);
+            this.scanTimer = null;
+        }
+        console.log(`[WatchdogService] 🛡️ Stopped.`);
+    }
+
     start() {
         if (this.scanTimer) clearInterval(this.scanTimer);
         console.log(`[WatchdogService] 🛡️ Started. Interval: ${this.scanInterval}ms`);
 
         this.scanTimer = setInterval(async () => {
             const canvases = this.canvasManager.getCanvases();
+            const now = Date.now();
+            const TTL_2_MINUTES = 2 * 60 * 1000;
             
             // 打印心跳日志 (状态变更或间隔 20 秒才输出)
-            const details = Array.from(canvases.entries()).map(([id, c]) => 
-                `${id}(${c.task_status.status},is_del=${c.task_status.is_delivered},sc=${c.task_status.importance_score || 0},notif=${!!this.notifiers.get(id)})`
-            ).join(', ');
+            const details = Array.from(canvases.entries()).map(([id, c]) => {
+                const tasksInfo = c.tasks.length > 0 
+                    ? c.tasks.map(t => `${t.id}(${t.status},del=${t.is_delivered},sc=${t.importance_score})`).join('|')
+                    : `legacy(${c.task_status.status},sc=${c.task_status.importance_score})`;
+                return `${id}:[${tasksInfo}]`;
+            }).join(', ');
             
             const currentDetails = `${canvases.size}-${details}`;
-            const now = Date.now();
             if (currentDetails !== this.lastHeartbeatDetails || now - this.lastHeartbeatLogTime > 60000) {
                 console.log(`[Watchdog][${this.instanceId}] 💓 Heartbeat: ${canvases.size} canvases: [${details || 'none'}]`);
                 this.lastHeartbeatDetails = currentDetails;
@@ -59,50 +79,81 @@ export class WatchdogService extends EventEmitter {
 
             // 执行磁盘同步
             await this.canvasManager.syncCanvasesFromDisk();
+
+            // [V3.9] 处理定时任务执行触发
+            const dueTasks = this.cronManager.getDueItems();
+            for (const item of dueTasks) {
+                console.log(`[Watchdog] ⏰ Triggering scheduled task: ${item.task_name}`);
+                const taskId = this.canvasManager.createTask(item.callId, item.task_name);
+                await this.canvasManager.updateTask(item.callId, taskId, {
+                    summary: `⏰ [定时触发] ${item.query}`,
+                    importance_score: 10,
+                    is_delivered: false // 标记为未投递，这样 Watchdog 稍后会触发播报通知用户开始执行
+                });
+                // 触发 Orchestrator 逻辑由 FastAgentV3 感应 Canvas 变化执行 (或者这里直接 emit 事件)
+                this.emit('SCHEDULE_TRIGGERED', { callId: item.callId, taskId, query: item.query });
+            }
             
-            // 扫描符合条件的任务触发播报
             for (const [callId, canvas] of canvases.entries()) {
-                const status = canvas.task_status;
+                if (AgentOrchestrator.isLocked(callId)) continue;
+                
+                const pendingBroadcasts: TaskItem[] = [];
                 const context = canvas.context;
-                const score = status.importance_score || 0;
 
-                // [V3.6.22] 触发逻辑重构：精简播报触发，根据重要性分类
-                let shouldTrigger = false;
+                let gcOccurred = false;
+                // [V3.7] 嵌套双循环：外层 callId -> 内层 tasks[] (倒序扫描以便 GC 删除)
+                for (let i = canvas.tasks.length - 1; i >= 0; i--) {
+                    const task = canvas.tasks[i];
 
-                if (!status.is_delivered) {
-                    if (status.status === 'FAILED' || status.status === 'COMPLETED') {
-                        // FAILED / COMPLETED：只要未投递且有内容即触发
-                        if (status.summary || status.direct_response) {
-                            shouldTrigger = true;
-                        }
-                    } else if (status.status === 'READY') {
-                        // READY：新结果就绪，阈值回归至 5.0 以符合 V3.6.5 设计规范（避免低价值干扰）
-                        if (score >= 5) {
-                            shouldTrigger = true;
-                        }
-                    } else if (status.status === 'PENDING') {
-                        // PENDING：运行中，仅限极高优先级（>= 8）的进度汇报才主动切入
-                        if (score >= 8 && (status.summary || status.direct_response)) {
-                            shouldTrigger = true;
+                    // === 1. 聚合播报判定 ===
+                    // [V3.11] 使用动态阈值配置
+                    const readyThreshold = this.taskImportance?.getThreshold('READY') || 5;
+                    const pendingThreshold = this.taskImportance?.getThreshold('PENDING') || 8;
+
+                    let shouldBroadcast = false;
+                    if ((task.status === 'COMPLETED' || task.status === 'FAILED') && !task.is_delivered && (task.summary || task.direct_response)) {
+                        shouldBroadcast = true;
+                    } else if (task.status === 'READY' && (task.importance_score || 0) >= readyThreshold && !task.is_delivered) {
+                        shouldBroadcast = true;
+                    } else if (task.status === 'PENDING' && (task.importance_score || 0) >= pendingThreshold && !task.is_delivered) {
+                        shouldBroadcast = true;
+                    }
+
+                    if (shouldBroadcast) {
+                        pendingBroadcasts.push(task);
+                    }
+
+                    // === 2. GC 归档判定 (TTL 2 分钟) ===
+                    if ((task.status === 'COMPLETED' || task.status === 'FAILED') && task.is_delivered) {
+                        if (task.completed_at && (now - task.completed_at > TTL_2_MINUTES)) {
+                            console.log(`[Watchdog] 📦 Archiving task ${task.id} for session ${callId}`);
+                            await this.dialogueMemory.logEvent(callId, 'TASK_ARCHIVED', { 
+                                id: task.id, 
+                                name: task.name, 
+                                summary: task.summary 
+                            });
+                            canvas.tasks.splice(i, 1);
+                            gcOccurred = true;
                         }
                     }
                 }
 
-                if (shouldTrigger && this.notifiers.has(callId)) {
-                    // [V3.6.25] 防止广播风暴：如果该会话已在处理队列中，则跳过本次触发
-                    if (AgentOrchestrator.isLocked(callId)) {
-                        continue;
-                    }
+                // 如果发生了 GC，立即同步到磁盘快照
+                if (gcOccurred) {
+                    await this.canvasManager.persistContext(callId).catch(() => {});
+                }
 
-                    console.log(`[Watchdog] 📣 Triggering broadcast for ${callId} (status: ${status.status}, score: ${score})`);
-                    this.emit('trigger', { callId, status, canvas });
-                    // 触发后立即更新交互时间，防止紧接着触发闲置逻辑
+                // 执行聚合播报
+                if (pendingBroadcasts.length > 0 && this.notifiers.has(callId)) {
+                    console.log(`[Watchdog] 📣 Triggering aggregate broadcast for ${callId} (${pendingBroadcasts.length} tasks)`);
+                    
+                    this.emit('trigger', { callId, tasks: pendingBroadcasts, canvas });
                     context.last_interaction_time = now;
+                    continue; 
                 }
+
 
                 // [V3.3.0] 闲置主动问候 (Idle Greeting) 策略
-                const idleTime = now - (context.last_interaction_time || now);
-                
                 if (context.is_busy) {
                     const elapsedSinceInteraction = now - (context.last_interaction_time || now);
                     if (elapsedSinceInteraction > 90000) { 
@@ -114,9 +165,12 @@ export class WatchdogService extends EventEmitter {
                     continue;
                 }
 
-                // 只有 COMPLETED/FAILED/READY 且已投递，才进入闲置扫描
-                const isFinished = status.status === 'COMPLETED' || status.status === 'FAILED' || status.status === 'READY';
-                if (isFinished && status.is_delivered) {
+                // 只有所有活跃任务均已投递且处于终态，才进入闲置扫描
+                const isAllFinished = canvas.tasks.length > 0 && canvas.tasks.every(t => 
+                    (t.status === 'COMPLETED' || t.status === 'FAILED' || t.status === 'READY') && t.is_delivered
+                );
+
+                if (isAllFinished) {
                     const idleTime = now - (context.last_interaction_time || now);
                     const isTextChat = callId.startsWith('text-chat-');
                     const threshold = isTextChat ? 60000 : 15000;
@@ -130,15 +184,8 @@ export class WatchdogService extends EventEmitter {
                             this.emit('idle_trigger', { callId, canvas });
                         }
                     }
-                } else if (status.status === 'PENDING') {
-                    context.last_interaction_time = now;
                 }
             }
         }, this.scanInterval);
-    }
-
-    stop() {
-        if (this.scanTimer) clearInterval(this.scanTimer);
-        this.notifiers.clear();
     }
 }

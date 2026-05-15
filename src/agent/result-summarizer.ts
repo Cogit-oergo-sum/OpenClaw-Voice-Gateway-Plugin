@@ -26,8 +26,9 @@ export class ResultSummarizer {
         const sleModel = this.config.fastAgent?.sleModel || this.config.llm.model;
 
         try {
-            const messages = await promptAssembler.assembleSLEPayload('PERSONA_REFRESH', callId, {
-                fullPersonaContext: `[原始全量上下文]\n${fullContext}`
+            const messages = await promptAssembler.assembleSLEPayload('REFINING', callId, {
+                fullPersonaContext: `[原始全量上下文]\n${fullContext}`,
+                current_intent: '人设核心提炼与快照同步'
             });
 
             const response = await this.openai.chat.completions.create({
@@ -40,7 +41,7 @@ export class ResultSummarizer {
             const content = response.choices[0]?.message?.content || "你是 Jarvis。用户是先生。";
             
             // [V3.6.10] 记录审计日志
-            LlmLogger.log({ source: 'Persona-Refresh', scenario: 'PERSONA_REFRESH', callId, model: sleModel }, messages as any[], content);
+            LlmLogger.log({ source: 'Persona-Refresh', scenario: 'REFINING', callId, model: sleModel }, messages as any[], content, (response as any).usage as any);
 
             return content;
         } catch (e) {
@@ -85,7 +86,7 @@ export class ResultSummarizer {
             const content = resp.choices[0]?.message?.content;
 
             // [V3.6.10] 记录审计日志
-            LlmLogger.log({ source: 'Task-Result-Sync', scenario: 'SUMMARIZING', callId, model: sleModel }, messages as any[], content || "EMPTY");
+            LlmLogger.log({ source: 'Task-Result-Sync', scenario: 'SUMMARIZING', callId, model: sleModel }, messages as any[], content || "EMPTY", (resp as any).usage as any);
 
             if (content && content.trim()) {
                 const parsed = JSON.parse(content);

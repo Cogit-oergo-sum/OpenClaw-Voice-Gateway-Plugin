@@ -1,0 +1,63 @@
+{
+  "test_call_1a": {
+    "env": {
+      "time": "",
+      "weather": "Unknown"
+    },
+    "task_status": {
+      "id": "t_1775013817217_wvfy0i",
+      "name": "Task 3",
+      "status": "COMPLETED",
+      "summary": "",
+      "importance_score": 1,
+      "is_delivered": false,
+      "created_at": 1775013817217,
+      "version": 1775013817221,
+      "taskId": "t_1775013817217_wvfy0i",
+      "current_progress": 0,
+      "completed_at": 1775013817221
+    },
+    "tasks": [
+      {
+        "id": "t_1775013817217_6iticm",
+        "name": "Task 1",
+        "status": "READY",
+        "summary": "",
+        "importance_score": 1,
+        "is_delivered": true,
+        "created_at": 1775013817217,
+        "version": 1775013817222
+      },
+      {
+        "id": "t_1775013817217_930yd",
+        "name": "Task 2",
+        "status": "CANCELLED",
+        "summary": "New summary for t2",
+        "importance_score": 1,
+        "is_delivered": false,
+        "created_at": 1775013817217,
+        "version": 1775013817221,
+        "direct_response": "New summary for t2",
+        "completed_at": 1775013817221
+      },
+      {
+        "id": "t_1775013817217_wvfy0i",
+        "name": "Task 3",
+        "status": "COMPLETED",
+        "summary": "",
+        "importance_score": 1,
+        "is_delivered": false,
+        "created_at": 1775013817217,
+        "version": 1775013817221,
+        "completed_at": 1775013817221
+      }
+    ],
+    "context": {
+      "last_spoken_fragment": "",
+      "interrupted": false,
+      "last_interaction_time": 1775013817217,
+      "is_busy": false,
+      "idle_trigger_count": 0
+    }
+  }
+}

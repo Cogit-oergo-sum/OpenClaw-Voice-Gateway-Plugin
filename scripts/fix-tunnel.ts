@@ -40,10 +40,11 @@ async function fixTunnel() {
             baseUrl: process.env.BAILIAN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1'
         },
         tts: {
-            vendor: 'ByteDance',
+            vendor: 'ByteDanceFlowing',
             appId: 'zego_test',
             token: 'zego_test',
-            voiceType: 'zh_female_wanwanxiaohe_moon_bigtts'
+            voiceType: 'zh_female_zhixingnvsheng_mars_bigtts',
+            resourceId: 'seed-tts-2.0'
         }
     };
 

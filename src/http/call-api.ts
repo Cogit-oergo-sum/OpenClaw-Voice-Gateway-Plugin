@@ -2,6 +2,7 @@ import { CallManager } from '../call/call-manager';
 import { generateToken04 } from '../call/zego-auth';
 import type { ZegoConfig } from '../types/config';
 import { RateLimiter } from '../utils/rate-limiter';
+import { LlmLogger } from '../utils/llm-logger';
 
 // 全局单例限流器：单 UserId 限制 1 分钟最多发起 3 次通话
 const startCallLimiter = new RateLimiter(60000, 3);
@@ -54,6 +55,14 @@ export function startCallHandler(manager: CallManager, config: ZegoConfig) {
             callState.userStreamId = userStreamId;
             callState.agentStreamId = agentStreamId;
             callState.status = 'active';
+
+            // 记录 agentInstanceId
+            console.log(`[startCallHandler] agentInstanceId: ${agentInstanceId} (userId: ${userId}, roomId: ${roomId})`);
+            LlmLogger.log(
+                { source: 'call-api', scenario: 'create_agent_instance', callId: agentInstanceId },
+                [{ role: 'system', content: `CreateAgentInstance for userId=${userId}, roomId=${roomId}` }],
+                agentInstanceId
+            );
 
             // 7. 生成客户端加入房间所需的 RTC Token04
             const token = generateToken04(config.appId, config.serverSecret, userId);

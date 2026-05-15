@@ -46,7 +46,7 @@ const config = {
         model: process.env.BAILIAN_MODEL || 'qwen-plus',
         baseUrl: process.env.BAILIAN_BASE_URL
     },
-    tts: { vendor: "ByteDance", appId: "zego_test", token: "zego_test", voiceType: "zh_female_wanwanxiaohe_moon_bigtts" },
+    tts: { vendor: "ByteDanceFlowing", appId: "zego_test", token: "zego_test", voiceType: "zh_female_zhixingnvsheng_mars_bigtts", resourceId: "seed-tts-2.0" },
     advanced: { httpAuthToken: "none" },
     fastAgent: {
         slcModel: process.env.SLC_MODEL || 'qwen-turbo',

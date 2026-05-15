@@ -13,25 +13,50 @@ stop_services() {
     pkill -f "ts-node scripts/dev-server.ts" && echo -e "${GREEN}✔ Backend 已停止${NC}" || echo "Backend 未运行"
     # 停止前端 UI (Vite)
     pkill -f "vite" && echo -e "${GREEN}✔ Frontend 已停止${NC}" || echo "Frontend 未运行"
+    # 停止隧道守护进程
+    pkill -f "cloudflare_keeper.sh" && echo -e "${GREEN}✔ Tunnel Keeper 已停止${NC}" || echo "Tunnel Keeper 未运行"
+    pkill -f "cloudflared tunnel" && echo -e "${GREEN}✔ Cloudflared 进程已停止${NC}" || true
+    # 停止 ZEGO MCP Proxy
+    pkill -f "ts-node.*zego_mcp/scripts/server" && echo -e "${GREEN}✔ MCP Proxy 已停止${NC}" || echo "MCP Proxy 未运行"
     # 清理残留的验证脚本
     pkill -f "ts-node scripts/verify_" && echo -e "${GREEN}✔ 僵尸验证脚本已清理${NC}" || echo "无残留验证脚本"
 }
 
 start_services() {
     echo -e "${BLUE}🚀 正在启动 V3.3.0 原子化架构...${NC}"
-    
+
+    # 启动隧道守护进程 (Cloudflare Tunnel)
+    TUNNEL_KEEPER="../openclaw-test-env/cloudflare_keeper.sh"
+    if [ -f "$TUNNEL_KEEPER" ]; then
+        chmod +x "$TUNNEL_KEEPER" 2>/dev/null
+        nohup "$TUNNEL_KEEPER" > /tmp/keeper.log 2>&1 &
+        echo -e "${GREEN}✔ Cloudflare Tunnel Keeper 已启动${NC}"
+    else
+        echo -e "${RED}⚠ Tunnel Keeper 脚本不存在: $TUNNEL_KEEPER${NC}"
+    fi
+
+    # 启动 ZEGO MCP Proxy (端口 3004)
+    if ! lsof -i :3004 >/dev/null 2>&1; then
+        nohup npx ts-node skills_repo/zego_mcp/scripts/server.ts > .mcp-proxy.log 2>&1 &
+        sleep 1
+        echo -e "${GREEN}✔ MCP Proxy 已启动 (port 3004)${NC}"
+    else
+        echo -e "${BLUE}MCP Proxy 已在运行 (port 3004)${NC}"
+    fi
+
     # 后端
     nohup npx ts-node scripts/dev-server.ts > .backend.log 2>&1 &
     sleep 2
-    
+
     # 前端
     cd web
     nohup npm run dev > ../.frontend.log 2>&1 &
     cd ..
-    
+
     echo -e "${GREEN}====================================${NC}"
     echo -e "🔗 Backend API: ${BLUE}http://localhost:18795${NC}"
     echo -e "🔗 Frontend UI: ${BLUE}http://localhost:5173${NC}"
+    echo -e "🔗 Tunnel Log:  ${BLUE}/tmp/tunnel.log${NC}"
     echo -e "💡 日志查看: ${BLUE}tail -f .backend.log${NC}"
     echo -e "${GREEN}====================================${NC}"
 }

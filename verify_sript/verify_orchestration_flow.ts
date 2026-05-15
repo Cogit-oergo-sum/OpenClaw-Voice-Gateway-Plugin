@@ -25,45 +25,51 @@ async function verify() {
     const routerMock: any = { 
         detectIntent: async () => ({ needsTool: false, intent: "" })
     };
-    const assemblerMock: any = { 
+    const assemblerMock: any = {
         assemblePrompt: async () => "prompt",
         assembleSLEPayload: async () => []
     };
+    const toolHandlerMock: any = { abortTask: () => {} };
+    const cronManagerMock: any = {};
+    const executorMock: any = { deleteAgent: async () => true };
 
     const orchestrator = new AgentOrchestrator(
-        slcMock, 
-        sleMock, 
-        routerMock, 
-        assemblerMock, 
-        canvasMgr, 
-        memory, 
-        shadow
+        slcMock,
+        sleMock,
+        routerMock,
+        assemblerMock,
+        canvasMgr,
+        memory,
+        shadow,
+        toolHandlerMock,
+        cronManagerMock,
+        executorMock
     );
 
     const callId = "test_call_123";
 
-    // 1. Verify Refining Lock
-    console.log("\n1. Verifying Refining Lock...");
-    const lock1 = orchestrator.tryLockRefining(callId);
+    // 1. Verify Session Lock
+    console.log("\n1. Verifying Session Lock...");
+    const lock1 = orchestrator.tryLockSession(callId, 'user');
     console.log("First lock attempt:", lock1);
-    const lock2 = orchestrator.tryLockRefining(callId);
-    console.log("Second lock attempt (concurrent):", lock2);
+    const lock2 = orchestrator.tryLockSession(callId, 'internal');
+    console.log("Second lock attempt (concurrent internal):", lock2);
 
     if (lock1 === true && lock2 === false) {
-        console.log("✅ Refining lock effectively prevents concurrent execution.");
+        console.log("✅ Session lock effectively prevents concurrent execution.");
     } else {
-        throw new Error("❌ Refining lock failed!");
+        throw new Error("❌ Session lock failed!");
     }
 
-    orchestrator.releaseLockRefining(callId);
-    const lock3 = orchestrator.tryLockRefining(callId);
+    orchestrator.releaseLockSession(callId);
+    const lock3 = orchestrator.tryLockSession(callId, 'user');
     console.log("After release, lock attempt:", lock3);
     if (lock3 === true) {
-        console.log("✅ Refining lock release works.");
+        console.log("✅ Session lock release works.");
     } else {
-        throw new Error("❌ Refining lock release failed!");
+        throw new Error("❌ Session lock release failed!");
     }
-    orchestrator.releaseLockRefining(callId);
+    orchestrator.releaseLockSession(callId);
 
     // 2. Verify __INTERNAL_TRIGGER__ flow (Watchdog optimization)
     console.log("\n2. Verifying Watchdog-Heartbeat flow (Routing Optimization)...");
